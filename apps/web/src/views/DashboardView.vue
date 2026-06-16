@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { getStats } from '../services/api'
 import AgentProgress from '../components/AgentProgress.vue'
 
 const sessionStatus = ref('idle')
@@ -7,82 +8,55 @@ const sessionId = ref('')
 const executedSteps = ref(0)
 const totalSteps = ref(5)
 const tokensRound = ref(0)
-const tokensTotal = ref(45780)
+const tokensTotal = ref(0)
 const estimatedCost = ref('0.00')
+const loading = ref(true)
 
 const agentSteps = ref([
   { name: '衣橱检索', label: '衣橱检索', status: 'waiting', duration: 0, detail: '' },
   { name: '搭配推荐', label: '搭配推荐', status: 'waiting', duration: 0, detail: '' },
   { name: '图片生成', label: '图片生成', status: 'waiting', duration: 0, detail: '' },
-  { name: '安全审核', label: '安全审核', status: 'waiting', duration: 0, detail: '' },
   { name: '文案生成', label: '文案生成', status: 'waiting', duration: 0, detail: '' },
 ])
 
-const historySessions = ref([
-  { id: 'def456', time: '06-16 14:30', steps: 4, tokens: 1234, status: 'done' },
-  { id: 'ghi789', time: '06-16 10:15', steps: 5, tokens: 2456, status: 'done' },
-  { id: 'jkl012', time: '06-15 18:42', steps: 3, tokens: 890, status: 'error' },
-])
+const historySessions = ref([])
 
 const canPause = ref(false)
 const canResume = ref(false)
 const canStop = ref(false)
 
-const startDemo = () => {
+const fetchStats = async () => {
+  loading.value = true
+  try {
+    const { data } = await getStats()
+    const body = data.data || data
+    tokensTotal.value = body.total_tokens || 0
+    estimatedCost.value = (body.total_cost_usd || 0).toFixed(4)
+    if (body.total_sessions) {
+      historySessions.value = [{
+        id: `global-${body.total_sessions}`,
+        time: new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+        steps: body.total_sessions,
+        tokens: body.total_tokens || 0,
+        status: 'done',
+      }]
+    }
+  } catch (err) {
+    // backend may not be ready yet, leave defaults
+  } finally {
+    loading.value = false
+  }
+}
+
+const startSession = () => {
   sessionId.value = 'session_' + Date.now().toString(36)
   sessionStatus.value = 'running'
   executedSteps.value = 0
   tokensRound.value = 0
-  canPause.value = true
-  canStop.value = true
-  canResume.value = false
-  agentSteps.value.forEach((s) => { s.status = 'waiting'; s.duration = 0; s.detail = '' })
-  runDemoStep(0)
-}
-
-let demoInterval = null
-
-const runDemoStep = (idx) => {
-  if (idx >= agentSteps.value.length || sessionStatus.value !== 'running') return
-  agentSteps.value[idx].status = 'running'
-  const start = Date.now()
-  demoInterval = setTimeout(() => {
-    if (sessionStatus.value !== 'running') return
-    agentSteps.value[idx].status = 'done'
-    agentSteps.value[idx].duration = ((Date.now() - start) / 1000).toFixed(1)
-    executedSteps.value = idx + 1
-    tokensRound.value += Math.floor(Math.random() * 400) + 100
-    if (idx + 1 < agentSteps.value.length) {
-      runDemoStep(idx + 1)
-    } else {
-      sessionStatus.value = 'done'
-      canPause.value = false
-      canResume.value = false
-      canStop.value = false
-      historySessions.value.unshift({
-        id: sessionId.value,
-        time: new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
-        steps: executedSteps.value,
-        tokens: tokensRound.value,
-        status: 'done',
-      })
-    }
-  }, 1500 + Math.random() * 1000)
-}
-
-const pauseSession = () => {
-  sessionStatus.value = 'paused'
   canPause.value = false
-  canResume.value = true
-  clearTimeout(demoInterval)
-}
-
-const resumeSession = () => {
-  sessionStatus.value = 'running'
-  canPause.value = true
   canResume.value = false
-  const idx = agentSteps.value.findIndex((s) => s.status === 'running' || s.status === 'waiting')
-  if (idx >= 0) runDemoStep(idx)
+  canStop.value = true
+  agentSteps.value.forEach((s) => { s.status = 'waiting'; s.duration = 0; s.detail = '' })
 }
 
 const stopSession = () => {
@@ -90,10 +64,9 @@ const stopSession = () => {
   canPause.value = false
   canResume.value = false
   canStop.value = false
-  clearTimeout(demoInterval)
 }
 
-onUnmounted(() => clearTimeout(demoInterval))
+onMounted(fetchStats)
 
 const statusText = (s) => {
   const map = { idle: '未启动', running: '进行中', paused: '已暂停', done: '已完成' }
@@ -106,99 +79,98 @@ const statusClass = (s) => 'status-' + s
   <div class="dashboard-page">
     <h2 class="page-title">控制面板</h2>
 
-    <div class="dash-cards">
-      <div class="dash-card">
-        <h3 class="dash-card-title">当前会话状态</h3>
-        <div class="dash-card-body">
-          <div class="dash-row">
-            <span class="dash-label">会话</span>
-            <span class="dash-value">{{ sessionId || '---' }}</span>
-          </div>
-          <div class="dash-row">
-            <span class="dash-label">状态</span>
-            <span class="dash-badge" :class="statusClass(sessionStatus)">{{ statusText(sessionStatus) }}</span>
-          </div>
-          <div class="dash-row">
-            <span class="dash-label">进度</span>
-            <span class="dash-value">{{ executedSteps }} / {{ totalSteps }} 步</span>
-          </div>
-          <div class="dash-progress-bar">
-            <div
-              class="dash-progress-fill"
-              :style="{ width: (executedSteps / totalSteps * 100) + '%' }"
-            ></div>
-          </div>
-        </div>
-        <div class="dash-card-actions">
-          <button v-if="!sessionStatus || sessionStatus === 'idle' || sessionStatus === 'done'" class="dash-btn dash-btn-start" @click="startDemo">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            开始
-          </button>
-          <button v-if="canPause" class="dash-btn dash-btn-pause" @click="pauseSession">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-            暂停
-          </button>
-          <button v-if="canResume" class="dash-btn dash-btn-resume" @click="resumeSession">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            继续
-          </button>
-          <button v-if="canStop" class="dash-btn dash-btn-stop" @click="stopSession">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-            终止
-          </button>
-        </div>
-      </div>
-
-      <div class="dash-card">
-        <h3 class="dash-card-title">Token 消耗统计</h3>
-        <div class="dash-card-body">
-          <div class="dash-row">
-            <span class="dash-label">本轮消耗</span>
-            <span class="dash-value dash-value-mono">{{ tokensRound.toLocaleString() }} tokens</span>
-          </div>
-          <div class="dash-row">
-            <span class="dash-label">累计消耗</span>
-            <span class="dash-value dash-value-mono">{{ tokensTotal.toLocaleString() }} tokens</span>
-          </div>
-          <div class="dash-row">
-            <span class="dash-label">预估费用</span>
-            <span class="dash-value">¥ {{ estimatedCost }}</span>
-          </div>
-        </div>
-      </div>
+    <div v-if="loading" class="dash-loading">
+      <div class="wardrobe-spinner"></div>
+      <p>加载统计数据...</p>
     </div>
 
-    <div class="dash-section">
-      <h3 class="dash-section-title">Agent 工作进度</h3>
-      <div class="dash-agent-list">
-        <AgentProgress :steps="agentSteps" :collapsed="false" />
-      </div>
-    </div>
-
-    <div class="dash-section">
-      <h3 class="dash-section-title">历史会话</h3>
-      <div v-if="!historySessions.length" class="dash-empty">暂无历史会话</div>
-      <div v-else class="dash-history-table">
-        <div class="dht-header">
-          <span class="dht-col dht-col-id">会话 ID</span>
-          <span class="dht-col dht-col-time">时间</span>
-          <span class="dht-col dht-col-steps">步数</span>
-          <span class="dht-col dht-col-tokens">Tokens</span>
-          <span class="dht-col dht-col-status">状态</span>
+    <template v-else>
+      <div class="dash-cards">
+        <div class="dash-card">
+          <h3 class="dash-card-title">当前会话状态</h3>
+          <div class="dash-card-body">
+            <div class="dash-row">
+              <span class="dash-label">会话</span>
+              <span class="dash-value">{{ sessionId || '---' }}</span>
+            </div>
+            <div class="dash-row">
+              <span class="dash-label">状态</span>
+              <span class="dash-badge" :class="statusClass(sessionStatus)">{{ statusText(sessionStatus) }}</span>
+            </div>
+            <div class="dash-row">
+              <span class="dash-label">进度</span>
+              <span class="dash-value">{{ executedSteps }} / {{ totalSteps }} 步</span>
+            </div>
+            <div class="dash-progress-bar">
+              <div
+                class="dash-progress-fill"
+                :style="{ width: (executedSteps / totalSteps * 100) + '%' }"
+              ></div>
+            </div>
+          </div>
+          <div class="dash-card-actions">
+            <button v-if="!sessionStatus || sessionStatus === 'idle' || sessionStatus === 'done'" class="dash-btn dash-btn-start" @click="startSession">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              开始
+            </button>
+            <button v-if="canStop" class="dash-btn dash-btn-stop" @click="stopSession">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+              终止
+            </button>
+          </div>
         </div>
-        <div v-for="h in historySessions" :key="h.id" class="dht-row">
-          <span class="dht-col dht-col-id">{{ h.id }}</span>
-          <span class="dht-col dht-col-time">{{ h.time }}</span>
-          <span class="dht-col dht-col-steps">{{ h.steps }} 步</span>
-          <span class="dht-col dht-col-tokens">{{ h.tokens.toLocaleString() }}</span>
-          <span class="dht-col dht-col-status">
-            <span class="dash-badge-sm" :class="h.status === 'done' ? 'badge-done' : 'badge-error'">
-              {{ h.status === 'done' ? '完成' : '异常' }}
+
+        <div class="dash-card">
+          <h3 class="dash-card-title">Token 消耗统计</h3>
+          <div class="dash-card-body">
+            <div class="dash-row">
+              <span class="dash-label">本轮消耗</span>
+              <span class="dash-value dash-value-mono">{{ tokensRound.toLocaleString() }} tokens</span>
+            </div>
+            <div class="dash-row">
+              <span class="dash-label">累计消耗</span>
+              <span class="dash-value dash-value-mono">{{ tokensTotal.toLocaleString() }} tokens</span>
+            </div>
+            <div class="dash-row">
+              <span class="dash-label">预估费用</span>
+              <span class="dash-value">$ {{ estimatedCost }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-section">
+        <h3 class="dash-section-title">Agent 工作进度</h3>
+        <div class="dash-agent-list">
+          <AgentProgress :steps="agentSteps" :collapsed="false" />
+        </div>
+      </div>
+
+      <div class="dash-section">
+        <h3 class="dash-section-title">历史会话</h3>
+        <div v-if="!historySessions.length" class="dash-empty">暂无历史会话</div>
+        <div v-else class="dash-history-table">
+          <div class="dht-header">
+            <span class="dht-col dht-col-id">会话 ID</span>
+            <span class="dht-col dht-col-time">时间</span>
+            <span class="dht-col dht-col-steps">步数</span>
+            <span class="dht-col dht-col-tokens">Tokens</span>
+            <span class="dht-col dht-col-status">状态</span>
+          </div>
+          <div v-for="h in historySessions" :key="h.id" class="dht-row">
+            <span class="dht-col dht-col-id">{{ h.id }}</span>
+            <span class="dht-col dht-col-time">{{ h.time }}</span>
+            <span class="dht-col dht-col-steps">{{ h.steps }} 步</span>
+            <span class="dht-col dht-col-tokens">{{ h.tokens.toLocaleString() }}</span>
+            <span class="dht-col dht-col-status">
+              <span class="dash-badge-sm" :class="h.status === 'done' ? 'badge-done' : 'badge-error'">
+                {{ h.status === 'done' ? '完成' : '异常' }}
+              </span>
             </span>
-          </span>
+          </div>
         </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
@@ -208,7 +180,26 @@ const statusClass = (s) => 'status-' + s
   margin: 0 auto;
 }
 
-/* 顶部双卡片 */
+.dash-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  color: #8B7355;
+  font-size: 14px;
+  gap: 12px;
+}
+.wardrobe-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #E8D5C0;
+  border-top-color: #884BFF;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .dash-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -311,7 +302,6 @@ const statusClass = (s) => 'status-' + s
 .dash-btn-resume { background: #3538CD; color: #fff; }
 .dash-btn-stop { background: #F04438; color: #fff; }
 
-/* Agent 进度区域 */
 .dash-section {
   margin-top: 20px;
 }
@@ -337,7 +327,6 @@ const statusClass = (s) => 'status-' + s
   border-radius: 14px;
 }
 
-/* 历史会话表格 */
 .dash-history-table {
   background: #fff;
   border: 1px solid #F0EBE3;

@@ -1,4 +1,4 @@
-﻿import time
+import time
 import json
 
 from langchain.agents.middleware import AgentMiddleware
@@ -76,3 +76,15 @@ class AgentStepTracker(AgentMiddleware):
         if steps and steps[-1].get("status") == "running":
             steps[-1] = {**steps[-1], "status": "done"}
         return {"intermediate_steps": steps}
+
+
+AUDIT_FORBIDDEN_KEYWORDS = ["裸体", "色情", "暴力", "血腥", "武器"]
+
+
+class AuditMiddleware(AgentMiddleware):
+    def after_tool_call(self, request, result, runtime):
+        content = str(result)
+        for kw in AUDIT_FORBIDDEN_KEYWORDS:
+            if kw in content:
+                raise ValueError(f"audit_blocked: keyword={kw}")
+        return None

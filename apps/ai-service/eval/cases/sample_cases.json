@@ -1,0 +1,62 @@
+[
+    {
+        "id": "wardrobe_001",
+        "input": "我有哪些白色衣服",
+        "expected": {"agent": "wardrobe", "action": "search"},
+        "tags": ["wardrobe", "search"]
+    },
+    {
+        "id": "wardrobe_002",
+        "input": "添加一件白色T恤到衣橱",
+        "expected": {"agent": "wardrobe", "action": "add"},
+        "tags": ["wardrobe", "add"]
+    },
+    {
+        "id": "wardrobe_003",
+        "input": "删除那件不喜欢的衬衫",
+        "expected": {"agent": "wardrobe", "action": "remove"},
+        "tags": ["wardrobe", "remove"]
+    },
+    {
+        "id": "stylist_001",
+        "input": "明晚约会穿什么",
+        "expected": {"agent": "stylist", "action": "recommend"},
+        "tags": ["stylist", "recommend"]
+    },
+    {
+        "id": "stylist_002",
+        "input": "通勤上班怎么搭配",
+        "expected": {"agent": "stylist", "action": "recommend"},
+        "tags": ["stylist", "recommend"]
+    },
+    {
+        "id": "visualizer_001",
+        "input": "把这件衣服改成红色",
+        "expected": {"agent": "visualizer", "action": "edit"},
+        "tags": ["visualizer", "edit"]
+    },
+    {
+        "id": "visualizer_002",
+        "input": "帮我换装试穿这件裙子",
+        "expected": {"agent": "visualizer", "action": "merge"},
+        "tags": ["visualizer", "merge"]
+    },
+    {
+        "id": "weather_001",
+        "input": "今天北京天气怎么样",
+        "expected": {"agent": "stylist", "action": "weather"},
+        "tags": ["weather", "query"]
+    },
+    {
+        "id": "copywriter_001",
+        "input": "帮我写一段这套穿搭的文案",
+        "expected": {"agent": "copywriter", "action": "write"},
+        "tags": ["copywriter", "write"]
+    },
+    {
+        "id": "stylist_003",
+        "input": "周末郊游穿什么",
+        "expected": {"agent": "stylist", "action": "recommend"},
+        "tags": ["stylist", "recommend"]
+    }
+]

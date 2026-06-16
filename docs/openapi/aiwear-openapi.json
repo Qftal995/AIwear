@@ -565,6 +565,98 @@
           }
         }
       }
+    },
+    "/api/session-stats": {
+      "get": {
+        "tags": ["Python - 统计"],
+        "summary": "会话统计",
+        "description": "获取当前会话或全局的Token消耗和费用统计",
+        "operationId": "sessionStats",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "会话ID，不传返回全局统计"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "统计数据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "total_sessions": { "type": "integer" },
+                        "active_sessions": { "type": "integer" },
+                        "total_tokens": { "type": "integer" },
+                        "total_tokens_in": { "type": "integer" },
+                        "total_tokens_out": { "type": "integer" },
+                        "total_cost_usd": { "type": "number" },
+                        "avg_latency_ms": { "type": "number" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/stats": {
+      "get": {
+        "tags": ["Java - 网关"],
+        "summary": "Java端会话统计",
+        "description": "Java Spring Boot 转发到 Python /api/session-stats，需 JWT Authorization 头",
+        "operationId": "javaStats",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "JWT Bearer token"
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "会话ID，不传返回全局统计"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "统计数据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "total_sessions": { "type": "integer" },
+                        "active_sessions": { "type": "integer" },
+                        "total_tokens": { "type": "integer" },
+                        "total_cost_usd": { "type": "number" },
+                        "avg_latency_ms": { "type": "number" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

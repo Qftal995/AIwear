@@ -1,6 +1,6 @@
 <script setup>
 import { ref, nextTick, watch, onMounted } from 'vue'
-import { agentChat } from '../services/api'
+import { agentChat, createChatStream } from '../services/api'
 import AgentChat from '../components/AgentChat.vue'
 
 const QUICK_PROMPTS = ['约会穿搭', '通勤上班', '休闲周末', '商务会议', '运动户外']
@@ -11,6 +11,7 @@ const inputText = ref('')
 const refImages = ref([])
 const chatScroll = ref(null)
 const fileInput = ref(null)
+const streamingContent = ref('')
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -48,16 +49,14 @@ const sendMessage = async () => {
   scrollToBottom()
 
   try {
-    const payload = {
-      message: text,
-      session_id: sessionId.value,
-    }
+    const payload = { message: text, session_id: sessionId.value }
     if (userMsg.images.length) {
       payload.image_urls = userMsg.images
     }
 
     const { data } = await agentChat(payload)
     const body = data.data || data
+    const sid = body.sessionId || body.session_id
 
     const agentMsg = {
       role: 'agent',
@@ -73,12 +72,55 @@ const sendMessage = async () => {
       })),
     }
     messages.value.push(agentMsg)
+
+    if (sid) {
+      const streamMsg = { role: 'agent', content: '', images: [], progress: [] }
+      messages.value.push(streamMsg)
+      createChatStream(sid, {
+        onMessage(data) {
+          if (data.reply) streamMsg.content = data.reply
+          if (data.steps) {
+            streamMsg.progress = data.steps.map((s) => ({
+              name: s.name || s.step,
+              label: s.name || s.step,
+              status: s.status || 'done',
+              duration: s.duration,
+            }))
+          }
+          scrollToBottom()
+        },
+        onProgress(data) {
+          if (!streamMsg.progress) streamMsg.progress = []
+          const existing = streamMsg.progress.find((p) => p.name === data.step)
+          if (existing) {
+            existing.status = data.status || 'running'
+            existing.progress = data.progress
+          } else {
+            streamMsg.progress.push({
+              name: data.step,
+              label: data.label || data.step,
+              status: data.status || 'running',
+              progress: data.progress,
+            })
+          }
+          scrollToBottom()
+        },
+        onError(err) {
+          if (!streamMsg.content) streamMsg.content = err?.message || '流式传输失败'
+        },
+        onDone() {
+          loading.value = false
+          scrollToBottom()
+        },
+      })
+    } else {
+      loading.value = false
+    }
   } catch (err) {
     messages.value.push({
       role: 'agent',
       content: err?.message || '请求失败，请稍后重试',
     })
-  } finally {
     loading.value = false
     scrollToBottom()
   }
@@ -200,7 +242,6 @@ onMounted(() => {
   scroll-behavior: smooth;
 }
 
-/* 空态 */
 .chat-empty {
   display: flex;
   flex-direction: column;
@@ -248,7 +289,6 @@ onMounted(() => {
   border-color: #D4B896;
 }
 
-/* 底部输入区 */
 .chat-footer {
   padding: 12px 0 4px;
   border-top: 1px solid #F0EBE3;

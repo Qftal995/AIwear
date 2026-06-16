@@ -1,18 +1,10 @@
-/**
- * 后端接口封装（学生演示项目）
- *
- * 供页面直接调用，不在此处写业务参数含义，由调用方传参。
- * - 登录：sendCode（发验证码）、auth（登录/注册）、logout（退出）。
- * - 图片：uploadMyImage（上传）、myImages（我的图片列表）、editImage（单图编辑）、mergeImages（双图合并）、searchImages（文搜图/图搜图）。
- * - 记录：myRecords（历史记录列表）。
- */
 import http from './http'
+import { useAuthStore } from '../store/auth'
 
 const FORM_URLENCODED_HEADERS = { 'Content-Type': 'application/x-www-form-urlencoded' }
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 const PYTHON_TIMEOUT = 300000
 
-// ---------- 登录 ----------
 export function sendCode(email) {
   return http.post('/user/send-code', { email })
 }
@@ -30,7 +22,6 @@ export function logout(token) {
   return http.post('/user/logout')
 }
 
-// ---------- 图片 ----------
 export function uploadMyImage(file) {
   const fd = new FormData()
   fd.append('file', file)
@@ -51,7 +42,6 @@ export function mergeImages(params) {
   })
 }
 
-/** 文搜图传 query；图搜图传 file（或 image 为已有图 URL），有 file 时用 FormData，否则用 URLSearchParams */
 export function searchImages(params) {
   if (params.file) {
     const fd = new FormData()
@@ -71,7 +61,6 @@ export function myImages() {
   return http.get('/file/my-images')
 }
 
-// ---------- Agent 智能搭配 ----------
 export function agentChat(params) {
   return http.post('/agent/chat', params, {
     headers: JSON_HEADERS,
@@ -79,12 +68,64 @@ export function agentChat(params) {
   })
 }
 
+export function createChatStream(sessionId, callbacks) {
+  const { onMessage, onProgress, onError, onDone } = callbacks
+  const authStore = useAuthStore()
+  const token = authStore.token
+  const baseURL = import.meta.env.VITE_API_BASE_URL || '/api'
+
+  fetch(`${baseURL}/agent/chat/stream?sessionId=${encodeURIComponent(sessionId)}`, {
+    headers: {
+      'Authorization': token ? `Bearer ${token}` : '',
+      'Accept': 'text/event-stream',
+    },
+  }).then(response => {
+    if (!response.ok) throw new Error('SSE connection failed')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    function read() {
+      reader.read().then(({ done, value }) => {
+        if (done) { onDone(); return }
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const payload = line.slice(6)
+            if (payload === '[DONE]') { onDone(); return }
+            try {
+              const data = JSON.parse(payload)
+              if (data.type === 'progress' || data.status === 'running') {
+                onProgress(data)
+              } else if (data.type === 'error') {
+                onError(new Error(data.error))
+              } else if (data.type === 'result') {
+                onMessage(data)
+              }
+            } catch (e) {
+              // skip non-JSON lines
+            }
+          }
+        }
+        read()
+      }).catch(onError)
+    }
+    read()
+  }).catch(onError)
+}
+
 export function getWardrobe() {
   return http.get('/agent/wardrobe')
 }
 
-// ---------- 记录 ----------
+export function getStats(sessionId) {
+  return http.get('/agent/stats', {
+    params: sessionId ? { sessionId } : {},
+  })
+}
+
 export function myRecords() {
   return http.get('/record/my')
 }
-

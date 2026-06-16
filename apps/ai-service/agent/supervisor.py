@@ -4,8 +4,8 @@ from agent.core import AgentState, init_models, create_aiwear_agent
 
 def create_supervisor(llm, sub_agents: list) -> object:
     intent_prompt = (
-        "分析用户意图，从以下分类中选择一个或多个：wardrobe, stylist, visualizer, auditor, copywriter。"
-        "wardrobe：衣物检索；stylist：搭配推荐；visualizer：图片处理；auditor：内容审核；copywriter：文案撰写。"
+        "分析用户意图，从以下分类中选择一个或多个：wardrobe, stylist, visualizer, copywriter。"
+        "wardrobe：衣物检索；stylist：搭配推荐；visualizer：图片处理；copywriter：文案撰写。"
         "只返回分类名称，用逗号分隔。"
     )
 
@@ -45,7 +45,24 @@ def create_supervisor(llm, sub_agents: list) -> object:
         state["sub_agent_results"] = results
         return state
 
+    def hitl_node(state: AgentState) -> AgentState:
+        needs_hitl = state.get("needs_hitl", False)
+        if needs_hitl:
+            state["hitl"] = {
+                "type": "hitl",
+                "question": "请确认是否继续执行此操作？",
+                "options": ["确认继续", "修改需求", "取消"],
+            }
+            state["paused"] = True
+        else:
+            state["paused"] = False
+        return state
+
     def aggregate_node(state: AgentState) -> AgentState:
+        if state.get("paused"):
+            from langchain_core.messages import AIMessage
+            state["messages"] = list(state["messages"]) + [AIMessage(content=json.dumps(state["hitl"], ensure_ascii=False))]
+            return state
         results = state.get("sub_agent_results", [])
         if not results:
             return state
@@ -58,13 +75,16 @@ def create_supervisor(llm, sub_agents: list) -> object:
         state["messages"] = list(state["messages"]) + [AIMessage(content=result.content)]
         return state
 
+    import json
     builder = StateGraph(AgentState)
     builder.add_node("supervisor", supervisor_node)
     builder.add_node("route", route_node)
+    builder.add_node("hitl", hitl_node)
     builder.add_node("aggregate", aggregate_node)
     builder.add_edge(START, "supervisor")
     builder.add_edge("supervisor", "route")
-    builder.add_edge("route", "aggregate")
+    builder.add_edge("route", "hitl")
+    builder.add_edge("hitl", "aggregate")
     builder.add_edge("aggregate", END)
     compiled = builder.compile()
     return compiled

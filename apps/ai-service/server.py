@@ -12,11 +12,11 @@ from agent.supervisor import create_supervisor
 from agent.agents.wardrobe import create_wardrobe_agent
 from agent.agents.stylist import create_stylist_agent
 from agent.agents.visualizer import create_visualizer_agent
-from agent.agents.auditor import create_auditor_agent
 from agent.agents.copywriter import create_copywriter_agent
 from tools.image_tools import edit_image_tool, merge_image_tool, image_description_tool
 from utils.clip_utils import clip_image_to_512d
 from utils.tracing import trace_step, trace_tool_call, trace_error
+from utils.cost_tracker import CostTracker
 from vector_store.faiss_store import FAISSStore
 from memory.wardrobe_store import WardrobeStore
 from memory.user_profile import UserProfile
@@ -30,15 +30,15 @@ FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", os.path.join(_project_root, "da
 
 wardrobe_store = WardrobeStore(index_path=FAISS_INDEX_PATH)
 user_profile = UserProfile()
+cost_tracker = CostTracker()
 
 models = init_models()
 
 sub_agents = [
     create_wardrobe_agent(llm=models["planner"], vector_store=wardrobe_store),
-    create_stylist_agent(llm=models["planner"]),
+    create_stylist_agent(llm=models["planner"], user_profile=user_profile),
     create_visualizer_agent(llm=models["planner"]),
-    create_auditor_agent(llm=models["planner"]),
-    create_copywriter_agent(llm=models["planner"]),
+    create_copywriter_agent(llm=models["planner"], user_profile=user_profile),
 ]
 
 supervisor_graph = create_supervisor(llm=models["planner"], sub_agents=sub_agents)
@@ -178,9 +178,22 @@ def chat_api():
             "intermediate_steps": [],
         }
 
+        chat_start = time.time()
+        cost_tracker.start_session(session_id)
+
         result = supervisor_graph.invoke(state)
         last_msg = result["messages"][-1]
         reply = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+
+        chat_latency = int((time.time() - chat_start) * 1000)
+        cost_tracker.record_step(
+            session_id=session_id,
+            agent_name="supervisor",
+            model="deepseek-chat",
+            tokens_in=len(message) // 2,
+            tokens_out=len(reply) // 2,
+            latency_ms=chat_latency,
+        )
 
         sessions[session_id] = {
             "state": result,
@@ -215,7 +228,6 @@ def chat_stream_api():
             {"name": "wardrobe", "label": "衣橱检索"},
             {"name": "stylist", "label": "搭配推荐"},
             {"name": "visualizer", "label": "图片生成"},
-            {"name": "auditor", "label": "安全审核"},
             {"name": "copywriter", "label": "文案生成"},
         ]
 
@@ -229,17 +241,29 @@ def chat_stream_api():
             "intermediate_steps": [],
         }
 
+        cost_tracker.start_session(session_id)
+
         for i, step in enumerate(steps):
             yield f"data: {json.dumps({'step': step['name'], 'label': step['label'], 'status': 'running', 'progress': round((i) / len(steps) * 100)}, ensure_ascii=False)}\n\n"
 
         try:
+            stream_start = time.time()
             result = supervisor_graph.invoke(state)
             for i, step in enumerate(steps):
                 yield f"data: {json.dumps({'step': step['name'], 'label': step['label'], 'status': 'done', 'progress': round((i + 1) / len(steps) * 100)}, ensure_ascii=False)}\n\n"
 
             last_msg = result["messages"][-1]
             reply = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
-            yield f"data: {json.dumps({'type': 'result', 'reply': reply, 'steps': result.get('intermediate_steps', [])}, ensure_ascii=False)}\n\n"
+            stream_latency = int((time.time() - stream_start) * 1000)
+            cost_tracker.record_step(
+                session_id=session_id,
+                agent_name="supervisor",
+                model="deepseek-chat",
+                tokens_in=len(message) // 2,
+                tokens_out=len(reply) // 2,
+                latency_ms=stream_latency,
+            )
+            yield f"data: {json.dumps({'type': 'result', 'reply': reply, 'sessionId': session_id, 'steps': result.get('intermediate_steps', [])}, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
 
@@ -254,6 +278,16 @@ def chat_stream_api():
             "Connection": "keep-alive",
         },
     )
+
+
+@app.route("/api/session-stats", methods=["GET"])
+def session_stats_api():
+    session_id = request.args.get("sessionId", "")
+    if session_id:
+        stats = cost_tracker.get_session_stats(session_id)
+    else:
+        stats = cost_tracker.get_global_stats()
+    return jsonify({"code": 200, "data": stats}), 200
 
 
 @app.route("/api/wardrobe/<user_id>", methods=["GET"])

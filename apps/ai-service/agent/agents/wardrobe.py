@@ -1,4 +1,5 @@
 from agent.core import init_models, create_aiwear_agent
+from tools.wardrobe_tools import search_wardrobe_tool, add_to_wardrobe_tool, remove_from_wardrobe_tool
 
 
 def create_wardrobe_agent(llm=None, vector_store=None) -> dict:
@@ -6,7 +7,7 @@ def create_wardrobe_agent(llm=None, vector_store=None) -> dict:
         llm = init_models()["planner"]
     system_prompt = "你是衣橱检索助手，根据用户需求从衣橱中找到合适的衣物。返回找到的衣物列表和匹配理由。"
     agent = create_aiwear_agent(
-        tools=[],
+        tools=[search_wardrobe_tool, add_to_wardrobe_tool, remove_from_wardrobe_tool],
         system_prompt=system_prompt,
     )
     return {"name": "wardrobe", "agent": agent, "description": "衣橱检索助手"}

@@ -1,12 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { getWardrobe } from '../services/api'
+import { getWardrobe, uploadMyImage } from '../services/api'
 import { ElMessage } from 'element-plus'
 
 const items = ref([])
 const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = 12
+const fileInput = ref(null)
 
 const filters = ref({
   category: '',
@@ -45,6 +46,26 @@ const fetchItems = async () => {
     ElMessage.error(err?.message || '加载衣橱失败')
   } finally {
     loading.value = false
+  }
+}
+
+const triggerUpload = () => {
+  fileInput.value?.click()
+}
+
+const onFileSelected = async (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  try {
+    loading.value = true
+    await uploadMyImage(file)
+    ElMessage.success('上传成功')
+    await fetchItems()
+  } catch (err) {
+    ElMessage.error(err?.message || '上传失败')
+  } finally {
+    loading.value = false
+    if (fileInput.value) fileInput.value.value = ''
   }
 }
 
@@ -108,10 +129,17 @@ onMounted(fetchItems)
   <div class="wardrobe-page">
     <div class="wardrobe-header">
       <h2 class="page-title">衣橱管理</h2>
-      <button class="wardrobe-upload-btn">
+      <button class="wardrobe-upload-btn" @click="triggerUpload">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         上传图片
       </button>
+      <input
+        type="file"
+        ref="fileInput"
+        accept="image/*"
+        class="chat-file-hidden"
+        @change="onFileSelected"
+      />
     </div>
 
     <div class="wardrobe-filters">
@@ -227,8 +255,10 @@ onMounted(fetchItems)
 .wardrobe-upload-btn:hover {
   opacity: 0.9;
 }
+.chat-file-hidden {
+  display: none;
+}
 
-/* 筛选栏 */
 .wardrobe-filters {
   display: flex;
   flex-direction: column;
@@ -283,7 +313,6 @@ onMounted(fetchItems)
   cursor: pointer;
 }
 
-/* 加载与空态 */
 .wardrobe-loading {
   display: flex;
   flex-direction: column;
@@ -312,7 +341,6 @@ onMounted(fetchItems)
   font-size: 14px;
 }
 
-/* 卡片网格 */
 .wardrobe-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -414,7 +442,6 @@ onMounted(fetchItems)
   white-space: nowrap;
 }
 
-/* 分页 */
 .wardrobe-pagination {
   display: flex;
   align-items: center;
