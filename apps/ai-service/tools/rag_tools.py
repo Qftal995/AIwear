@@ -1,5 +1,7 @@
 import json
+import os
 
+import requests
 from langchain_core.tools import tool
 
 
@@ -61,11 +63,43 @@ def get_fashion_knowledge_tool(occasion: str = None, season: str = None, style: 
 
 @tool(description="查询指定城市的天气，返回温度、天气状况、穿衣建议。返回 JSON")
 def get_weather_tool(city: str = "北京") -> str:
-    return json.dumps({
-        "city": city,
-        "temperature": 26,
-        "condition": "晴",
-        "humidity": "45%",
-        "wind": "微风",
-        "dressing_advice": "天气温暖，建议轻薄长袖或短袖+薄外套，紫外线中等注意防晒",
-    }, ensure_ascii=False)
+    api_key = os.getenv("XINZHI_WEATHER_KEY", "")
+    if not api_key:
+        return json.dumps({"city": city, "temperature": 26, "condition": "晴", "dressing_advice": "天气温暖，建议轻薄长袖或短袖+薄外套"}, ensure_ascii=False)
+    try:
+        resp = requests.get(
+            "https://api.seniverse.com/v3/weather/now.json",
+            params={"key": api_key, "location": city, "language": "zh-Hans", "unit": "c"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        result = data["results"][0]
+        now = result["now"]
+        loc = result["location"]
+        temp = int(now["temperature"])
+        condition = now["text"]
+        humidity = now.get("humidity", "")
+        wind_dir = now.get("wind_direction", "")
+        wind_speed = now.get("wind_speed", "")
+        wind = f"{wind_dir} {wind_speed} km/h" if wind_dir else "微风"
+        if temp < 10:
+            advice = "天气寒冷，建议穿厚外套、毛衣、围巾，注意保暖"
+        elif temp < 20:
+            advice = "天气微凉，建议穿薄外套、长袖或针织衫"
+        elif temp < 28:
+            advice = "天气温暖，建议轻薄长袖或短袖+薄外套"
+        elif temp < 35:
+            advice = "天气较热，建议短袖、裙子、短裤，注意防晒"
+        else:
+            advice = "天气炎热，建议轻薄透气衣物，避免暴晒"
+        return json.dumps({
+            "city": loc["name"],
+            "temperature": temp,
+            "condition": condition,
+            "humidity": f"{humidity}%",
+            "wind": wind,
+            "dressing_advice": advice,
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"city": city, "error": str(e), "dressing_advice": "天气数据暂不可用，请根据季节自行搭配"}, ensure_ascii=False)
