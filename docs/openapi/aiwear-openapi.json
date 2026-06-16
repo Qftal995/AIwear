@@ -1,0 +1,570 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AIWear 2.0 API",
+    "description": "AIWear 2.0 智能虚拟试衣平台 API，含 Python Agent 7 端点 + Java Spring Boot 3 端点",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Python Flask Agent 服务"
+    },
+    {
+      "url": "http://localhost:8081",
+      "description": "Java Spring Boot 网关服务"
+    }
+  ],
+  "paths": {
+    "/api/validate-image": {
+      "post": {
+        "tags": ["Python - 图片处理"],
+        "summary": "图片审核",
+        "description": "上传图片进行安全审核，判断是否属于服装/人像类",
+        "operationId": "validateImage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "图片文件"
+                  },
+                  "imageUrl": {
+                    "type": "string",
+                    "description": "图片URL（与file二选一）"
+                  }
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "imageUrl": {
+                    "type": "string",
+                    "description": "图片URL"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "审核结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "allow": { "type": "boolean", "example": true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upload-image": {
+      "post": {
+        "tags": ["Python - 图片处理"],
+        "summary": "上传图片入库",
+        "description": "上传图片→CLIP提取512维向量→FAISS入库",
+        "operationId": "uploadImage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "图片文件"
+                  },
+                  "imageUrl": {
+                    "type": "string",
+                    "description": "图片URL（与file二选一）"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "description": "用户ID"
+                  }
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "imageUrl": {
+                    "type": "string",
+                    "description": "图片URL"
+                  },
+                  "ossUrl": {
+                    "type": "string",
+                    "description": "OSS URL"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "description": "用户ID"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "上传成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "imageId": { "type": "string", "example": "abc123" },
+                    "description": { "type": "string" },
+                    "embeddingDim": { "type": "integer", "example": 512 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search-image": {
+      "post": {
+        "tags": ["Python - 图片处理"],
+        "summary": "搜索图片",
+        "description": "文搜图/图搜图，走FAISS向量检索",
+        "operationId": "searchImage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "以图搜图的图片文件"
+                  },
+                  "query": {
+                    "type": "string",
+                    "description": "文搜图的查询文本"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "description": "用户ID"
+                  },
+                  "category": { "type": "string" },
+                  "color": { "type": "string" },
+                  "style": { "type": "string" },
+                  "season": { "type": "string" }
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": { "type": "string" },
+                  "userId": { "type": "string" },
+                  "category": { "type": "string" },
+                  "color": { "type": "string" },
+                  "style": { "type": "string" },
+                  "season": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "搜索结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "message": { "type": "string" },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "filePath": { "type": "string" },
+                          "imageId": { "type": "string" },
+                          "similarity": { "type": "number" },
+                          "description": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat": {
+      "post": {
+        "tags": ["Python - 对话"],
+        "summary": "智能搭配对话",
+        "description": "调用 Supervisor 多Agent编排进行搭配推荐",
+        "operationId": "chat",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "description": "用户的搭配需求",
+                    "example": "帮我搭一套明天约会的穿搭"
+                  },
+                  "query": {
+                    "type": "string",
+                    "description": "同message，兼容字段"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "description": "用户ID"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "description": "会话ID，不传自动生成"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "对话结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "sessionId": { "type": "string" },
+                    "reply": { "type": "string", "description": "Agent回复内容" },
+                    "steps": {
+                      "type": "array",
+                      "description": "中间步骤",
+                      "items": { "type": "object" }
+                    },
+                    "subResults": {
+                      "type": "array",
+                      "description": "子Agent结果",
+                      "items": { "type": "object" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/stream": {
+      "get": {
+        "tags": ["Python - 对话"],
+        "summary": "SSE流式对话进度",
+        "description": "Server-Sent Events流式返回Agent执行进度",
+        "operationId": "chatStream",
+        "parameters": [
+          {
+            "name": "message",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "用户的搭配需求",
+            "example": "约会穿搭"
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "同message，兼容字段"
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "用户ID"
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "会话ID，不传自动生成"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE事件流",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE事件: step状态 / result结果 / error错误 / [DONE]结束"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wardrobe/{user_id}": {
+      "get": {
+        "tags": ["Python - 衣橱"],
+        "summary": "获取用户衣橱列表",
+        "description": "返回指定用户的所有衣橱物品+标签",
+        "operationId": "wardrobeList",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "用户ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "衣橱列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "imageId": { "type": "string" },
+                          "ossUrl": { "type": "string" },
+                          "description": { "type": "string" },
+                          "tags": {
+                            "type": "object",
+                            "properties": {
+                              "category": { "type": "string" },
+                              "color": { "type": "string" },
+                              "style": { "type": "string" },
+                              "season": { "type": "string" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tool/image": {
+      "post": {
+        "tags": ["Python - 图片处理"],
+        "summary": "图片编辑/合并工具",
+        "description": "兼容旧Java调用，支持单图编辑(file)和双图合并(file1+file2)",
+        "operationId": "toolImage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["instruction"],
+                "properties": {
+                  "instruction": {
+                    "type": "string",
+                    "description": "编辑指令"
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "单图编辑时的图片"
+                  },
+                  "file1": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "双图合并时的第一张图"
+                  },
+                  "file2": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "双图合并时的第二张图"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "编辑结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "url": { "type": "string", "description": "结果图片URL" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/chat": {
+      "post": {
+        "tags": ["Java - 网关"],
+        "summary": "Java端智能搭配对话",
+        "description": "Java Spring Boot 转发到 Python Agent，需 JWT Authorization 头",
+        "operationId": "javaChat",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "JWT Bearer token"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                  "message": { "type": "string" },
+                  "query": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "imageUrl": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "对话结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": { "type": "string" },
+                    "reply": { "type": "string" },
+                    "steps": { "type": "array", "items": { "type": "object" } },
+                    "subResults": { "type": "array", "items": { "type": "object" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/chat/stream": {
+      "get": {
+        "tags": ["Java - 网关"],
+        "summary": "Java端SSE流式对话",
+        "description": "Java Spring Boot SSE转发到 Python Agent /api/chat/stream，需 JWT Authorization 头",
+        "operationId": "javaChatStream",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "JWT Bearer token"
+          },
+          {
+            "name": "message",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE事件流",
+            "content": {
+              "text/event-stream": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/wardrobe": {
+      "get": {
+        "tags": ["Java - 网关"],
+        "summary": "Java端衣橱列表",
+        "description": "Java Spring Boot 转发到 Python Agent /api/wardrobe/{user_id}，需 JWT Authorization 头（userId 从 JWT 解析）",
+        "operationId": "javaWardrobe",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "JWT Bearer token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "衣橱列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "type": "object" } },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

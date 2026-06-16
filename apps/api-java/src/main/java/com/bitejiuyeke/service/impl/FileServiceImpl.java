@@ -1,0 +1,211 @@
+package com.bitejiuyeke.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.bitejiuyeke.dto.request.EditImageRequest;
+import com.bitejiuyeke.dto.request.MergeImageRequest;
+import com.bitejiuyeke.dto.request.SearchImageRequest;
+import com.bitejiuyeke.dto.response.EditImageResponse;
+import com.bitejiuyeke.dto.response.MergeImageResponse;
+import com.bitejiuyeke.dto.response.SearchImageResponse;
+import com.bitejiuyeke.dto.response.UploadImageResponse;
+import com.bitejiuyeke.entity.ImageFile;
+import com.bitejiuyeke.mapper.ImageFileMapper;
+import com.bitejiuyeke.service.FileService;
+import com.bitejiuyeke.service.PythonImageService;
+import com.bitejiuyeke.service.RecordService;
+import com.bitejiuyeke.util.JwtUtil;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
+
+// 文件上传实现类
+@Slf4j
+@Service
+public class FileServiceImpl implements FileService {
+
+    @Autowired
+    private ImageFileMapper imageFileMapper;
+
+    private static final long MAX_FILE_SIZE = 52_428_800L; // 50MB
+
+    @Autowired
+    private PythonImageService pythonImageService;
+
+    @Value("${file.upload.dir:uploads}")
+    private String uploadBaseDir;
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Autowired
+    private RecordService recordService;
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UploadImageResponse uploadImage(MultipartFile file, String authorization) {
+        if (file == null) {
+            throw new RuntimeException("缺少上传文件");
+        }
+        if (file.isEmpty()) {
+            throw new RuntimeException("上传文件为空");
+        }
+        if (file.getContentType() == null || !file.getContentType().startsWith("image/")) {
+            throw new RuntimeException("仅支持图片上传");
+        }
+        long fileSize = file.getSize();
+        if (fileSize > MAX_FILE_SIZE) {
+            throw new RuntimeException("图片大小超过限制");
+        }
+
+        String token = jwtUtil.parseToken(authorization);
+
+        Long userId = jwtUtil.getUserId(token);
+
+        String originalFileName = file.getOriginalFilename();
+        if (originalFileName == null || originalFileName.isBlank()) {
+            originalFileName = "image";
+        }
+
+        String extension = getFileExtension(originalFileName, file.getContentType());
+        String uuid = UUID.randomUUID().toString().replace("-", "");
+
+        // 本地“系统”存储路径：uploads/images/{uuid}.ext
+        Path localDir = Paths.get(uploadBaseDir, "images");
+        try {
+            Files.createDirectories(localDir);
+        } catch (Exception e) {
+            throw new RuntimeException("创建本地存储目录失败");
+        }
+
+        String finalLocalFileName = uuid + extension;
+        Path localFilePath = localDir.resolve(finalLocalFileName);
+
+        try {
+            // 1) 上传到本地存储
+            file.transferTo(localFilePath);
+            if (!pythonImageService.validateImage(localFilePath)) {
+                throw new RuntimeException("图片审核不通过！");
+            }
+            // 2) 本地存储URL（跳过OSS，直接用本地路径）
+            String url = "http://localhost:8081/uploads/images/" + finalLocalFileName;
+
+            // 2.5) 上传到 Python（用于后续搜索向量化）
+            pythonImageService.uploadImage(userId, url);
+
+            // 3) 落库
+            ImageFile record = new ImageFile();
+            record.setUserId(userId);
+            record.setFileName(originalFileName);
+            record.setFileSize(fileSize);
+            record.setOssUrl(url);
+            imageFileMapper.insert(record);
+
+            UploadImageResponse response = new UploadImageResponse();
+            response.setUrl(url);
+            response.setFileName(originalFileName);
+            response.setFileSize(fileSize);
+            return response;
+        } catch (Exception e) {
+            log.error("图片上传失败，原因：{}", e.getMessage());
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    @Override
+    public List<ImageFile> myImages(String authorization) {
+        String token = jwtUtil.parseToken(authorization);
+        Long userId = jwtUtil.getUserId(token);
+        LambdaQueryWrapper<ImageFile> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(ImageFile::getUserId, userId).orderByDesc(ImageFile::getId);
+        return imageFileMapper.selectList(queryWrapper);
+    }
+
+    @Override
+    public List<SearchImageResponse> search(String authorization, SearchImageRequest searchImageRequest) {
+        // 1. 先去获取用户id
+        String token = jwtUtil.parseToken(authorization);
+        Long userId = jwtUtil.getUserId(token);
+        List<ImageFile> imageFiles = myImages(authorization);
+        Map<String, String> map = new HashMap<>();
+        for (ImageFile imageFile : imageFiles) {
+            map.put(imageFile.getOssUrl(), imageFile.getFileName());
+        }
+        // 2. 调用python服务
+        List<SearchImageResponse> searchImageResponseList = pythonImageService.search(userId, searchImageRequest);
+        for (SearchImageResponse searchImageResponse : searchImageResponseList) {
+            searchImageResponse.setFileName(map.get(searchImageResponse.getFilePath()));
+        }
+        // 3. 拿到数据，进行封装
+        return searchImageResponseList;
+    }
+
+    @Override
+    public EditImageResponse edit(String authorization, EditImageRequest editImageRequest) {
+        // 1. 鉴权 -> 用户只能编辑自己上传的图片
+        List<ImageFile> imageFiles = myImages(authorization);
+        // 2. 判断当前图片地址是否包含在imageFiles的ossUrl字段集合中
+        List<String> urls = imageFiles.stream().map(ImageFile::getOssUrl).toList();
+        if (!urls.contains(editImageRequest.getImage())) {
+            throw new RuntimeException("只能编辑自己上传的图片");
+        }
+        // 3. 调用python服务，封装最后的返回结果
+        EditImageResponse editImageResponse = pythonImageService.edit(editImageRequest);
+
+        // 新增调用记录
+        Long userId = jwtUtil.getUserId(jwtUtil.parseToken(authorization));
+        recordService.editSave(userId, editImageRequest, editImageResponse);
+        return editImageResponse;
+    }
+
+    @Override
+    public MergeImageResponse merge(String authorization, MergeImageRequest mergeImageRequest) {
+        // 1. 鉴权 -> 用户只能合并自己上传的图片
+        List<ImageFile> imageFiles = myImages(authorization);
+        // 2. 判断上传的图片是否包含在imageFiles的ossUrl字段集合中
+        List<String> urls = imageFiles.stream().map(ImageFile::getOssUrl).toList();
+        if (!urls.contains(mergeImageRequest.getImage1()) || !urls.contains(mergeImageRequest.getImage2())) {
+            throw new RuntimeException("只能合并自己上传的图片");
+        }
+        // 3. 调用python服务
+        MergeImageResponse mergeImageResponse = pythonImageService.merge(mergeImageRequest);
+        // 新增调用记录
+        Long userId = jwtUtil.getUserId(jwtUtil.parseToken(authorization));
+        recordService.mergeSave(userId, mergeImageRequest, mergeImageResponse);
+        return mergeImageResponse;
+    }
+
+    private String getFileExtension(String originalFileName, String contentType) {
+        if (originalFileName != null && originalFileName.contains(".")) {
+            String ext = originalFileName.substring(originalFileName.lastIndexOf(".")).toLowerCase(Locale.ROOT);
+            if (ext.length() <= 10) {
+                return ext;
+            }
+        }
+        if (contentType == null) {
+            return ".png";
+        }
+        if (contentType.equalsIgnoreCase("image/png")) {
+            return ".png";
+        }
+        if (contentType.equalsIgnoreCase("image/jpeg") || contentType.equalsIgnoreCase("image/jpg")) {
+            return ".jpg";
+        }
+        if (contentType.equalsIgnoreCase("image/gif")) {
+            return ".gif";
+        }
+        if (contentType.equalsIgnoreCase("image/webp")) {
+            return ".webp";
+        }
+        return ".png";
+    }
+}
+

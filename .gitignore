@@ -1,0 +1,10 @@
+﻿__pycache__/
+*.pyc
+*.pyo
+node_modules/
+target/
+dist/
+*.log
+.env
+data/
+uploads/
