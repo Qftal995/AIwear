@@ -12,6 +12,9 @@ import com.bitejiuyeke.dto.response.WardrobeItemResponse;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+
+import org.springframework.web.multipart.MultipartFile;
 
 public interface PythonImageService {
 
@@ -28,4 +31,16 @@ public interface PythonImageService {
     ChatResponse chat(Long userId, ChatRequest chatRequest);
 
     List<WardrobeItemResponse> getWardrobe(Long userId);
+
+    /** Submit an image editing task asynchronously to the Python service. */
+    Map<String, Object> submitAsyncTask(MultipartFile file, String instruction);
+
+    /** Poll the status of an async image task by its task ID. */
+    Map<String, Object> getTaskStatus(String taskId);
+
+    /** Get session-level or global stats from the Python service. */
+    Map<String, Object> getSessionStats(String sessionId);
+
+    /** Delete a wardrobe item by its OSS URL. */
+    void deleteByUrl(String ossUrl);
 }

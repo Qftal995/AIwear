@@ -36,20 +36,29 @@ class FAISSStore:
         self._metadata = []
         self._user_index = {}
         self._deleted = set()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._index_path = index_path
         if index_path and os.path.isdir(index_path):
             self.load()
 
     def add(self, image_id: str, embedding: list[float], metadata: dict) -> None:
+        import time
         with self._lock:
             self._index.add(np.array([embedding], dtype=np.float32))
             pos = self._index.ntotal - 1
             self._image_ids.append(image_id)
+            metadata.setdefault("created_at", time.time())
             self._metadata.append(metadata)
             uid = metadata.get('user_id')
             if uid:
                 self._user_index.setdefault(uid, set()).add(pos)
+
+    def update_metadata(self, pos: int, updates: dict) -> bool:
+        with self._lock:
+            if pos < 0 or pos >= len(self._metadata):
+                return False
+            self._metadata[pos].update(updates)
+            return True
 
     def add_batch(self, items: list[dict]) -> None:
         with self._lock:
@@ -86,7 +95,7 @@ class FAISSStore:
             results.sort(key=lambda x: x['similarity'], reverse=True)
             return results[:top_k]
 
-    def search_by_text(self, query: str, user_id: str = None, top_k: int = 10, min_similarity: float = 0.1) -> list[dict]:
+    def search_by_text(self, query: str, user_id: str = None, top_k: int = 10, min_similarity: float = 0.1, filters: dict = None) -> list[dict]:
         with self._lock:
             results = []
             for idx, mid in enumerate(self._image_ids):
@@ -95,6 +104,16 @@ class FAISSStore:
                 meta = self._metadata[idx]
                 if user_id and meta.get('user_id') != user_id:
                     continue
+                # Apply metadata filters (category, color, style, season)
+                if filters:
+                    tags = meta.get('tags', {})
+                    skip = False
+                    for fk, fv in filters.items():
+                        if fv and tags.get(fk, '') != fv:
+                            skip = True
+                            break
+                    if skip:
+                        continue
                 sim = _text_similarity(query, meta.get('description', ''))
                 if sim >= min_similarity:
                     results.append({
@@ -160,5 +179,8 @@ class FAISSStore:
                 results.append({
                     'image_id': self._image_ids[pos],
                     'metadata': self._metadata[pos],
+                    'position': pos,
                 })
+            # Sort newest first (highest position = most recently added)
+            results.sort(key=lambda x: x['position'], reverse=True)
             return results

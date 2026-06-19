@@ -1,0 +1,112 @@
+[
+    {
+        "id": "multi_wardrobe_stylist_copy",
+        "description": "衣橱查询 -> 搭配推荐 -> 文案生成（完整购物流程）",
+        "turns": [
+            {
+                "input": "我衣橱里有哪些白色衣服",
+                "expected": {"agent": "wardrobe", "action": "search"}
+            },
+            {
+                "input": "帮我用这些白色衣服搭配一套约会穿搭",
+                "expected": {"agent": "stylist", "action": "recommend"}
+            },
+            {
+                "input": "写一段小红书风格的文案描述这套搭配",
+                "expected": {"agent": "copywriter", "action": "write"}
+            }
+        ],
+        "tags": ["multi_turn", "workflow", "wardrobe", "stylist", "copywriter"]
+    },
+    {
+        "id": "multi_weather_stylist",
+        "description": "天气查询 -> 根据天气推荐搭配",
+        "turns": [
+            {
+                "input": "今天北京天气怎么样",
+                "expected": {"agent": "stylist", "action": "weather"}
+            },
+            {
+                "input": "这样的天气适合穿什么衣服出门",
+                "expected": {"agent": "stylist", "action": "recommend"}
+            }
+        ],
+        "tags": ["multi_turn", "weather", "stylist"]
+    },
+    {
+        "id": "multi_wardrobe_add_search",
+        "description": "添加衣橱 -> 验证查询",
+        "turns": [
+            {
+                "input": "帮我添加一件蓝色牛仔外套到衣橱",
+                "expected": {"agent": "wardrobe", "action": "add"}
+            },
+            {
+                "input": "我现在衣橱里有什么外套",
+                "expected": {"agent": "wardrobe", "action": "search"}
+            }
+        ],
+        "tags": ["multi_turn", "wardrobe", "add", "search"]
+    },
+    {
+        "id": "multi_visualizer_edit_tryon",
+        "description": "编辑衣服颜色 -> 试穿验证效果",
+        "turns": [
+            {
+                "input": "帮我看看衣橱里的红色连衣裙",
+                "expected": {"agent": "wardrobe", "action": "search"}
+            },
+            {
+                "input": "把这条裙子改成黑色",
+                "expected": {"agent": "visualizer", "action": "edit"}
+            },
+            {
+                "input": "帮我试穿一下改好后的效果",
+                "expected": {"agent": "visualizer", "action": "merge"}
+            }
+        ],
+        "tags": ["multi_turn", "visualizer", "edit", "merge"]
+    },
+    {
+        "id": "multi_search_remove_recommend",
+        "description": "查看衣橱 -> 删除不喜欢的 -> 重新推荐",
+        "turns": [
+            {
+                "input": "查看我的衣橱里有哪些衣服",
+                "expected": {"agent": "wardrobe", "action": "search"}
+            },
+            {
+                "input": "删除那件我不喜欢的黄色卫衣",
+                "expected": {"agent": "wardrobe", "action": "remove"}
+            },
+            {
+                "input": "帮我搭配一套周末郊游的穿搭",
+                "expected": {"agent": "stylist", "action": "recommend"}
+            },
+            {
+                "input": "写一段描述文案",
+                "expected": {"agent": "copywriter", "action": "write"}
+            }
+        ],
+        "tags": ["multi_turn", "workflow", "wardrobe", "stylist", "copywriter"]
+    },
+    {
+        "id": "multi_occasion_comparison",
+        "description": "多个场景搭配询问（连续搭配推荐）",
+        "turns": [
+            {
+                "input": "明天有个商务会议，穿什么合适",
+                "expected": {"agent": "stylist", "action": "recommend"}
+            },
+            {
+                "input": "换成周五晚上约会的搭配",
+                "expected": {"agent": "stylist", "action": "recommend"}
+            },
+            {
+                "input": "周末去海边度假怎么穿",
+                "expected": {"agent": "stylist", "action": "recommend"}
+            }
+        ],
+        "tags": ["multi_turn", "stylist", "recommend"]
+    }
+]

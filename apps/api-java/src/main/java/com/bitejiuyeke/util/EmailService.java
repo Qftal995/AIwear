@@ -32,7 +32,7 @@ public class EmailService {
             mailSender.send(message);
             return true;
         } catch (Exception e) {
-            log.error("验证码发送失败，收件人{}", toEmail);
+            log.error("验证码发送失败，收件人{}: {}", toEmail, e.getMessage(), e);
             return false;
         }
     }

@@ -12,4 +12,6 @@ public class ChatRequest {
     private String sessionId;
 
     private String imageUrl;
+
+    private java.util.List<String> imageUrls;
 }

@@ -1,0 +1,40 @@
+[
+  {
+    "id": "copy_001",
+    "input": "帮我写一段小红书风格的穿搭文案",
+    "tags": ["copywriter", "write", "social_media"],
+    "expected": {
+      "agent": "copywriter",
+      "action": "write"
+    }
+  },
+  {
+    "id": "copy_002",
+    "input": "给这套搭配写一段适合电商详情的描述文案",
+    "tags": ["copywriter", "write", "ecommerce"],
+    "expected": {
+      "agent": "copywriter",
+      "action": "write"
+    }
+  },
+  {
+    "id": "copy_003",
+    "input": "帮我润色一下这段穿搭描述，让它更有小红书爆款感",
+    "tags": ["copywriter", "rewrite", "polish"],
+    "expected": {
+      "agent": "copywriter",
+      "action": "write"
+    },
+    "_note": "润色/改写已存在的文案"
+  },
+  {
+    "id": "copy_004",
+    "input": "我这样穿适合什么场合？帮我写一段社交文案配图",
+    "tags": ["copywriter", "write", "multi_intent"],
+    "expected": {
+      "agent": "copywriter",
+      "action": "write"
+    },
+    "_note": "先分析场合，再写文案"
+  }
+]

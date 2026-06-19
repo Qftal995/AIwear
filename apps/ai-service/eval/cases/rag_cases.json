@@ -1,0 +1,38 @@
+[
+  {
+    "id": "rag_001",
+    "input": "女生户外婚礼下雨穿什么？",
+    "tags": ["rag", "female", "occasion"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "rag_002",
+    "input": "男生秋季面试穿搭推荐",
+    "tags": ["rag", "male", "season", "occasion"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "rag_003",
+    "input": "小个子女生通勤怎么穿显高？",
+    "tags": ["rag", "female", "body_shape", "occasion"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "rag_004",
+    "input": "男生梨形身材穿搭建议",
+    "tags": ["rag", "male", "body_shape"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  }
+]

@@ -12,15 +12,15 @@ spring:
 
   # MySQL数据源配置
   datasource:
-    url: jdbc:mysql://localhost:3307/bite_wear?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=utf8
-    username: bite
-    password: bite@123
+    url: "${MYSQL_URL:jdbc:mysql://localhost:3307/bite_wear}?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=utf8"
+    username: ${MYSQL_USER:bite}
+    password: ${MYSQL_PASSWORD:bite@123}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   # Redis配置
   data:
     redis:
-      host: localhost
+      host: ${REDIS_HOST:localhost}
       port: 6379
       database: 0
       timeout: 2000ms
@@ -35,8 +35,8 @@ spring:
   mail:
     host: smtp.qq.com
     port: 587
-    username: 2277075282@qq.com
-    password: caycqxwguzcfdiff # 授权码
+    username: ${SMTP_USERNAME:3422105661@qq.com}
+    password: ${SMTP_PASSWORD:wkazfrkwimlncicj} # 授权码
     protocol: smtp
     properties:
       mail:
@@ -58,13 +58,28 @@ mybatis-plus:
       id-type: auto # 主键自增
 
 jwt:
-  secret: abcdefghijklmnopqrstuvwxyz123456
+  secret: ${JWT_SECRET:abcdefghijklmnopqrstuvwxyz123456}
   expiration: 2
+
+app:
+  public-url: ${APP_PUBLIC_URL:http://127.0.0.1:8081}
 
 file:
   upload:
-    dir: ../../data/uploads
-    resource-locations: file:../../data/uploads/
+    dir: ${UPLOAD_DIR:../../data/uploads}
+    resource-locations: ${UPLOAD_RESOURCE_LOCATIONS:file:../../data/uploads/}
+
+python:
+  service:
+    base-url: ${PYTHON_SERVICE_URL:http://127.0.0.1:5001}
+
+# 阿里云 OSS 配置（可选：不配则使用本地存储）
+oss:
+  endpoint: oss-cn-beijing.aliyuncs.com
+  access-key-id: ${OSS_ACCESS_KEY:}
+  access-key-secret: ${OSS_ACCESS_SECRET:}
+  bucket: bitehouse-file
+  cname-domain:
 
 # 自定义日志配置
 logging:

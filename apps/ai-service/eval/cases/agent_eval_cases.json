@@ -1,0 +1,180 @@
+{
+  "_description": "Agent Eval 用例集 — 覆盖 4 种 intent × 工具集合 × HITL 触发/不触发",
+  "_rules": [
+    "expected.intent: 匹配 agent 返回的 intent 字段",
+    "expected.tools: 集合匹配（不要求顺序），空数组表示不检查",
+    "expected.needs_hitl: 检查是否触发人工确认",
+    "expected.max_latency_ms: 延迟上限，0 表示不检查",
+    "expected.min_sub_agents: 最少子 agent 数量，0 表示不检查"
+  ],
+  "cases": [
+    {
+      "id": "styling_weather_001",
+      "input": "北京今天上班穿什么",
+      "tags": ["intent", "styling_advice", "tools"],
+      "expected": {
+        "intent": "styling_advice",
+        "tools": ["weather"],
+        "needs_hitl": false,
+        "max_latency_ms": 30000,
+        "min_sub_agents": 1
+      }
+    },
+    {
+      "id": "styling_gender_002",
+      "input": "我是女生，明天面试应该怎么穿搭？",
+      "tags": ["intent", "styling_advice", "gender"],
+      "expected": {
+        "intent": "styling_advice",
+        "tools": ["rag_search"],
+        "needs_hitl": false,
+        "max_latency_ms": 30000,
+        "min_sub_agents": 1
+      }
+    },
+    {
+      "id": "styling_occasion_003",
+      "input": "户外婚礼穿什么合适？",
+      "tags": ["intent", "styling_advice", "occasion"],
+      "expected": {
+        "intent": "styling_advice",
+        "tools": ["rag_search"],
+        "needs_hitl": false,
+        "max_latency_ms": 30000,
+        "min_sub_agents": 1
+      }
+    },
+    {
+      "id": "styling_body_shape_004",
+      "input": "我是梨形身材女生，适合什么穿搭？",
+      "tags": ["intent", "styling_advice", "body_shape"],
+      "expected": {
+        "intent": "styling_advice",
+        "tools": ["body_shape"],
+        "needs_hitl": false,
+        "max_latency_ms": 30000,
+        "min_sub_agents": 1
+      }
+    },
+    {
+      "id": "styling_full_005",
+      "input": "北京今天下雨，通勤穿什么？男生",
+      "tags": ["intent", "styling_advice", "multi_tool"],
+      "expected": {
+        "intent": "styling_advice",
+        "tools": ["weather", "rag_search"],
+        "needs_hitl": false,
+        "max_latency_ms": 30000,
+        "min_sub_agents": 2
+      }
+    },
+    {
+      "id": "styling_simple_006",
+      "input": "推荐一套简约风穿搭",
+      "tags": ["intent", "styling_advice", "style"],
+      "expected": {
+        "intent": "styling_advice",
+        "tools": ["rag_search"],
+        "needs_hitl": false,
+        "max_latency_ms": 30000,
+        "min_sub_agents": 1
+      }
+    },
+    {
+      "id": "weather_only_007",
+      "input": "上海明天天气怎么样？",
+      "tags": ["intent", "weather_only"],
+      "expected": {
+        "intent": "weather_only",
+        "tools": ["weather"],
+        "needs_hitl": false,
+        "max_latency_ms": 20000,
+        "min_sub_agents": 0
+      }
+    },
+    {
+      "id": "weather_only_008",
+      "input": "查一下杭州的温度",
+      "tags": ["intent", "weather_only"],
+      "expected": {
+        "intent": "weather_only",
+        "tools": ["weather"],
+        "needs_hitl": false,
+        "max_latency_ms": 20000,
+        "min_sub_agents": 0
+      }
+    },
+    {
+      "id": "wardrobe_query_009",
+      "input": "看看我的衣橱里有什么衣服",
+      "tags": ["intent", "wardrobe_query"],
+      "expected": {
+        "intent": "wardrobe_query",
+        "tools": ["wardrobe_search"],
+        "needs_hitl": false,
+        "max_latency_ms": 20000,
+        "min_sub_agents": 0
+      }
+    },
+    {
+      "id": "wardrobe_query_010",
+      "input": "我的衣橱里有哪些上衣",
+      "tags": ["intent", "wardrobe_query"],
+      "expected": {
+        "intent": "wardrobe_query",
+        "tools": ["wardrobe_search"],
+        "needs_hitl": false,
+        "max_latency_ms": 20000,
+        "min_sub_agents": 0
+      }
+    },
+    {
+      "id": "image_edit_011",
+      "input": "帮我生成一张试穿效果图",
+      "tags": ["intent", "image_edit", "hitl"],
+      "expected": {
+        "intent": "image_edit",
+        "tools": [],
+        "needs_hitl": true,
+        "max_latency_ms": 15000,
+        "min_sub_agents": 0
+      }
+    },
+    {
+      "id": "image_edit_012",
+      "input": "把这张图的衣服换成红色的",
+      "tags": ["intent", "image_edit", "hitl"],
+      "expected": {
+        "intent": "image_edit",
+        "tools": [],
+        "needs_hitl": true,
+        "max_latency_ms": 15000,
+        "min_sub_agents": 0
+      }
+    },
+    {
+      "id": "styling_no_hitl_013",
+      "input": "明天面试穿什么好？男生",
+      "tags": ["hitl", "negative"],
+      "expected": {
+        "intent": "styling_advice",
+        "tools": [],
+        "needs_hitl": false,
+        "max_latency_ms": 30000,
+        "min_sub_agents": 0
+      }
+    },
+    {
+      "id": "styling_style_014",
+      "input": "帮我搭配一套休闲风格的穿搭",
+      "tags": ["intent", "styling_advice", "style"],
+      "expected": {
+        "intent": "styling_advice",
+        "tools": ["rag_search"],
+        "needs_hitl": false,
+        "max_latency_ms": 30000,
+        "min_sub_agents": 1
+      }
+    }
+  ]
+}

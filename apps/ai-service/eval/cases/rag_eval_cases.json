@@ -1,0 +1,156 @@
+{
+  "_description": "RAG Eval 用例集 — 覆盖性别×场合×季节组合，验证文件命中/关键词覆盖/citation 完整性",
+  "_rules": [
+    "expected.files: 预期出现在 top-k 结果中的文件名（至少命中 1 个即算通过）",
+    "expected.keywords: 预期出现在 content 中的关键词（覆盖率 ≥50% 即算通过）",
+    "expected.min_score: top-1 结果的 score 下限",
+    "expected.min_results: 最少返回结果数，0 表示不检查",
+    "filters.gender: male / female / 不传表示不限"
+  ],
+  "cases": [
+    {
+      "id": "commute_male_001",
+      "query": "男生通勤怎么穿",
+      "filters": {"gender": "male"},
+      "topK": 5,
+      "expected": {
+        "files": ["053_男生通勤穿搭规则.md", "006_通勤穿搭规则.md"],
+        "keywords": ["通勤", "衬衫", "裤子"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "commute_female_002",
+      "query": "女生通勤穿搭推荐",
+      "filters": {"gender": "female"},
+      "topK": 5,
+      "expected": {
+        "files": ["050_女生通勤穿搭规则.md", "054_女生通勤穿搭规则.md"],
+        "keywords": ["通勤", "裙", "西装"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "interview_male_003",
+      "query": "男生面试穿什么",
+      "filters": {"gender": "male"},
+      "topK": 5,
+      "expected": {
+        "files": ["051_男生面试穿搭规则.md", "001_面试通用穿搭规则.md"],
+        "keywords": ["面试", "衬衫", "西装"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "interview_female_004",
+      "query": "女生面试穿搭",
+      "filters": {"gender": "female"},
+      "topK": 5,
+      "expected": {
+        "files": ["052_女生面试穿搭规则.md", "001_面试通用穿搭规则.md"],
+        "keywords": ["面试", "裙", "西装"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "wedding_outdoor_005",
+      "query": "户外婚礼女生穿什么",
+      "filters": {"gender": "female"},
+      "topK": 5,
+      "expected": {
+        "files": ["008_户外婚礼穿搭规则.md"],
+        "keywords": ["婚礼", "户外", "礼服"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "date_male_006",
+      "query": "男生约会怎么穿搭",
+      "filters": {"gender": "male"},
+      "topK": 5,
+      "expected": {
+        "files": ["055_男生约会穿搭规则.md", "007_约会穿搭规则.md"],
+        "keywords": ["约会", "休闲", "衬衫"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "spring_season_007",
+      "query": "春季穿搭注意事项",
+      "filters": {},
+      "topK": 5,
+      "expected": {
+        "files": ["011_春季穿搭规则.md"],
+        "keywords": ["春季", "温差", "外套"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "rain_weather_008",
+      "query": "下雨天穿什么衣服合适",
+      "filters": {},
+      "topK": 5,
+      "expected": {
+        "files": ["031_雨天穿搭规则.md"],
+        "keywords": ["雨", "防水", "鞋"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "pear_shape_009",
+      "query": "梨形身材怎么穿搭修饰",
+      "filters": {},
+      "topK": 5,
+      "expected": {
+        "files": ["020_梨形身材修饰.md"],
+        "keywords": ["梨形", "臀", "裤"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "minimal_style_010",
+      "query": "极简风格穿搭",
+      "filters": {},
+      "topK": 5,
+      "expected": {
+        "files": ["038_极简通勤风规则.md", "037_法式简约风规则.md"],
+        "keywords": ["简约", "基础款", "纯色"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "tall_look_011",
+      "query": "怎么穿显高",
+      "filters": {},
+      "topK": 5,
+      "expected": {
+        "files": ["019_显高穿搭规则.md", "059_男生显高穿搭规则.md", "060_女生显高穿搭规则.md"],
+        "keywords": ["显高", "比例", "腰线"],
+        "min_score": 0.4,
+        "min_results": 1
+      }
+    },
+    {
+      "id": "sport_style_012",
+      "query": "运动休闲风格穿搭",
+      "filters": {},
+      "topK": 5,
+      "expected": {
+        "files": ["036_运动休闲穿搭规则.md"],
+        "keywords": ["运动", "休闲", "舒适"],
+        "min_score": 0.3,
+        "min_results": 1
+      }
+    }
+  ]
+}

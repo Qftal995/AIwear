@@ -23,13 +23,17 @@ class WardrobeStore:
         return {"image_id": image_id, "metadata": metadata}
 
     def search(self, user_id: str, query: str, filters: dict = None, top_k: int = 10) -> list[dict]:
-        return self.store.search_by_text(query=query, user_id=user_id, top_k=top_k)
+        return self.store.search_by_text(query=query, user_id=user_id, top_k=top_k, filters=filters)
 
     def search_by_image(self, user_id: str, image_data: bytes, top_k: int = 5) -> list[dict]:
         query_vector = clip_image_to_512d(image_data)
         return self.store.search_by_vector(
             query_vec=query_vector, user_id=user_id, top_k=top_k
         )
+
+    def search_similar(self, query: str, user_id: str, top_k: int = 10) -> list[dict]:
+        """Semantic vector search in wardrobe (alias for search)."""
+        return self.search(user_id=user_id, query=query, top_k=top_k)
 
     def get_user_items(self, user_id: str) -> list[dict]:
         return self.store.get_by_user(user_id)

@@ -42,7 +42,9 @@ class ContextSummarizer(AgentMiddleware):
             content = getattr(m, "content", "")
             if isinstance(content, str):
                 total_chars += len(content)
-        if total_chars // 4 <= self.token_limit:
+        from utils.token_counter import count_tokens
+        all_text = " ".join(getattr(m, "content", "") or "" for m in messages if isinstance(getattr(m, "content", ""), str))
+        if count_tokens(all_text) <= self.token_limit:
             return None
         cutoff = len(messages) // 2
         old_msgs = messages[:cutoff]
@@ -88,3 +90,33 @@ class AuditMiddleware(AgentMiddleware):
             if kw in content:
                 raise ValueError(f"audit_blocked: keyword={kw}")
         return None
+
+
+class TokenTrackingMiddleware(AgentMiddleware):
+    def __init__(self, session_id: str = ""):
+        super().__init__()
+        self.session_id = session_id
+
+    def wrap_tool_call(self, request, handler):
+        from utils.tracing import trace_tool_call
+        from utils.cost_tracker import CostTracker
+        from utils.token_counter import count_tokens
+
+        tool_name = request.tool.name if request.tool else "unknown"
+        args = request.tool_call.get("args", {}) if hasattr(request, "tool_call") else {}
+        start = time.time()
+        try:
+            result = handler(request)
+            duration_ms = int((time.time() - start) * 1000)
+            sid = self.session_id or args.get("session_id", "")
+            result_str = str(result) if result else ""
+            tokens_out = count_tokens(result_str)
+            trace_tool_call(sid, tool_name, args, result_str[:200], duration_ms)
+            if sid:
+                ct = CostTracker()
+                ct.record_tool_call(sid, tool_name, "deepseek-chat", 0, tokens_out, duration_ms)
+            return result
+        except Exception as e:
+            duration_ms = int((time.time() - start) * 1000)
+            trace_tool_call(self.session_id, tool_name, args, f"error: {e}", duration_ms)
+            raise

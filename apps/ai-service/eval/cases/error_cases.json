@@ -1,0 +1,42 @@
+[
+  {
+    "id": "err_001",
+    "input": "",
+    "tags": ["error", "empty_input"],
+    "expected": {
+      "agent": "supervisor",
+      "action": "unknown"
+    },
+    "_note": "空输入应优雅降级为 unknown，不崩溃"
+  },
+  {
+    "id": "err_002",
+    "input": "你好",
+    "tags": ["error", "greeting", "no_intent"],
+    "expected": {
+      "agent": "supervisor",
+      "action": "unknown"
+    },
+    "_note": "无明确意图的问候应 fallback 到 supervisor"
+  },
+  {
+    "id": "err_003",
+    "input": "asdfghjkl1234567890!@#$%^&*()",
+    "tags": ["error", "gibberish", "noise"],
+    "expected": {
+      "agent": "supervisor",
+      "action": "unknown"
+    },
+    "_note": "无意义输入应安全降级，不抛出异常"
+  },
+  {
+    "id": "err_004",
+    "input": "删除衣服",
+    "tags": ["error", "wardrobe", "ambiguous_target"],
+    "expected": {
+      "agent": "wardrobe",
+      "action": "remove"
+    },
+    "_note": "模糊的删除请求（未指定具体衣物），wardrobe agent 应请求澄清"
+  }
+]

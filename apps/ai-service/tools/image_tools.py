@@ -14,9 +14,6 @@ from langchain_core.messages.human import HumanMessage
 from langchain_core.tools import tool
 
 
-DASHSCOPE_FILES_URL = "https://dashscope.aliyuncs.com/api/v1/files"
-
-
 def _process_image_to_uri(image_data: bytes) -> str:
     img = Image.open(BytesIO(image_data))
     image_format = img.format.lower()
@@ -47,107 +44,6 @@ def _describe_image(data_uri: str, vl_llm: ChatTongyi) -> str:
     return str(resp.content)
 
 
-def _upload_via_dashscope(image_data: bytes) -> tuple:
-    """通过 DashScope Files API 上传图片，返回 (url, file_id)"""
-    api_key = os.getenv("DASHSCOPE_API_KEY")
-    headers = {"Authorization": f"Bearer {api_key}"}
-
-    ext = "png"
-    try:
-        img = Image.open(BytesIO(image_data))
-        ext = img.format.lower()
-    except Exception:
-        pass
-
-    filename = f"{uuid.uuid4().hex}.{ext}"
-
-    upload_resp = requests.post(
-        DASHSCOPE_FILES_URL,
-        headers=headers,
-        files={"files": (filename, image_data, f"image/{ext}")},
-        data={"purpose": "file-extract"},
-        timeout=30,
-    )
-    upload_resp.raise_for_status()
-    file_id = upload_resp.json()["data"]["uploaded_files"][0]["file_id"]
-
-    detail_resp = requests.get(
-        f"{DASHSCOPE_FILES_URL}/{file_id}",
-        headers=headers,
-        timeout=30,
-    )
-    detail_resp.raise_for_status()
-    url = detail_resp.json()["data"]["url"]
-    return url, file_id
-
-
-def _delete_dashscope_file(file_id: str):
-    """删除 DashScope 临时文件"""
-    try:
-        api_key = os.getenv("DASHSCOPE_API_KEY")
-        requests.delete(
-            f"{DASHSCOPE_FILES_URL}/{file_id}",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=10,
-        )
-    except Exception:
-        pass
-
-
-def _outfitanyone_tryon(person_url: str, top_url: str, bottom_url: str = None) -> dict:
-    """调用 OutfitAnyone aitryon-plus 虚拟试衣 API（异步提交+轮询）"""
-    api_key = os.getenv("DASHSCOPE_API_KEY")
-    if not api_key:
-        return {"success": False, "error": "DASHSCOPE_API_KEY not set"}
-
-    body = {
-        "model": "aitryon-plus",
-        "input": {
-            "person_image_url": person_url,
-            "top_garment_url": top_url,
-        },
-        "parameters": {
-            "resolution": -1,
-            "restore_face": True,
-        },
-    }
-    if bottom_url:
-        body["input"]["bottom_garment_url"] = bottom_url
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-        "X-DashScope-Async": "enable",
-    }
-
-    submit_resp = requests.post(
-        "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2image/image-synthesis",
-        json=body,
-        headers=headers,
-        timeout=30,
-    )
-    submit_resp.raise_for_status()
-    submit_result = submit_resp.json()
-    task_id = submit_result.get("output", {}).get("task_id")
-    if not task_id:
-        return {"success": False, "error": f"submit failed: {submit_result.get('message', 'no task_id')}"}
-
-    query_url = f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
-    for _ in range(60):
-        time.sleep(5)
-        q_resp = requests.get(query_url, headers={"Authorization": f"Bearer {api_key}"}, timeout=10)
-        q_resp.raise_for_status()
-        q_result = q_resp.json()
-        status = q_result["output"]["task_status"]
-        if status == "SUCCEEDED":
-            url = q_result["output"]["results"][0]["url"]
-            return {"success": True, "url": url, "model": "aitryon-plus"}
-        elif status == "FAILED":
-            return {"success": False, "error": q_result["output"].get("message", "task failed")}
-
-    return {"success": False, "error": "timeout after 5min"}
-
-
 @tool(description="编辑单张图片，调用 wanx2.1-imageedit，返回 JSON")
 def edit_image_tool(instruction: str, image_data: bytes = None, image_url: str = None) -> str:
     if image_data is None and image_url is None:
@@ -175,32 +71,19 @@ def edit_image_tool(instruction: str, image_data: bytes = None, image_url: str =
         return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
 
-@tool(description="合并两张图片，通过 DashScope Files 获取公网 URL 后调用 OutfitAnyone 试衣，返回 JSON")
+@tool(description="合并两张图片生成试穿效果图，使用 qwen-image-edit-plus 同步生成，返回 JSON")
 def merge_image_tool(instruction: str, image_data1=None, image_url1=None, image_data2=None, image_url2=None) -> str:
     if image_data1 is None and image_url1 is None:
         return json.dumps({"success": False, "error": "image_data1 or image_url1 required"})
     if image_data2 is None and image_url2 is None:
         return json.dumps({"success": False, "error": "image_data2 or image_url2 required"})
 
-    file_ids_to_clean = []
     try:
         if image_data1 is None:
             image_data1 = _download_image(image_url1)
         if image_data2 is None:
             image_data2 = _download_image(image_url2)
 
-        # 通过 DashScope Files API 上传，获取云内可访问的 URL
-        url1, fid1 = _upload_via_dashscope(image_data1)
-        file_ids_to_clean.append(fid1)
-        url2, fid2 = _upload_via_dashscope(image_data2)
-        file_ids_to_clean.append(fid2)
-
-        # 调用 OutfitAnyone 专业试衣模型
-        result = _outfitanyone_tryon(url1, url2)
-        if result["success"]:
-            return json.dumps(result, ensure_ascii=False)
-
-        # OutfitAnyone 失败，回退 qwen-image-edit-plus
         data_uri1 = _process_image_to_uri(image_data1)
         data_uri2 = _process_image_to_uri(image_data2)
 
@@ -209,14 +92,20 @@ def merge_image_tool(instruction: str, image_data1=None, image_url1=None, image_
         desc2 = _describe_image(data_uri2, vl_llm)
 
         prompt = (
-            f"图1内容：{desc1}\n"
-            f"图2内容：{desc2}\n"
-            f"用户需求：{instruction}\n"
-            f"请根据图1和图2的实际内容，智能判断需要做什么（换装/合影/组合搭配等），然后完成合成。"
-            f"若涉及人物换装，必须保留人物的面部、发型、姿势、背景完全不变。"
-            f"若图1和图2都是人物，则让他们合影或互动。"
+            f"图1（人物）：{desc1}\n"
+            f"图2（服装）：{desc2}\n"
+            f"给图1人物换上图2的服装。只迁移图2中服装的款式、颜色、版型和材质到图1人物身上。"
+            f"必须保留图1人物的面部、发型、姿势、身材比例和背景完全不变。"
+            f"不要复制图2中的人物、宠物、背景、表情、场景或其他物体。"
         )
-        messages = [{"role": "user", "content": [{"image": data_uri1}, {"image": data_uri2}, {"text": prompt}]}]
+        if instruction:
+            prompt = f"用户需求：{instruction}\n{prompt}"
+
+        messages = [{"role": "user", "content": [
+            {"image": data_uri1},
+            {"image": data_uri2},
+            {"text": prompt},
+        ]}]
         response = MultiModalConversation.call(model="qwen-image-edit-plus", messages=messages)
         url = response["output"]["choices"][0]["message"]["content"][0]["image"]
         return json.dumps({
@@ -225,9 +114,125 @@ def merge_image_tool(instruction: str, image_data1=None, image_url1=None, image_
         }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
-    finally:
-        for fid in file_ids_to_clean:
-            _delete_dashscope_file(fid)
+
+
+# ── 结构化执行层：接受 StructuredTask，不做智能猜测 ──────────────
+
+def execute_virtual_tryon(person_data: bytes, garment_data: bytes,
+                          garment_type: str = "unknown",
+                          person_gender: str = "unknown",
+                          instruction: str = "") -> dict:
+    data_uri1 = _process_image_to_uri(person_data)
+    data_uri2 = _process_image_to_uri(garment_data)
+    prompt = (
+        f"{instruction or '给图1人物换上图2的衣服'}\n"
+        "只迁移图2中的服装款式、颜色、版型和材质到图1人物身上。"
+        "必须保留图1人物的人脸、发型、姿势、身材比例和背景。"
+        "不要复制图2中的人物、宠物、背景、姿势、表情、场景或其他物体。"
+    )
+    messages = [{"role": "user", "content": [
+        {"image": data_uri1},
+        {"image": data_uri2},
+        {"text": prompt},
+    ]}]
+    response = MultiModalConversation.call(model="qwen-image-edit-plus", messages=messages)
+    url = response["output"]["choices"][0]["message"]["content"][0]["image"]
+    return {
+        "success": True,
+        "url": url,
+        "model": "qwen-image-edit-plus",
+        "task": "virtual_tryon",
+        "garment_type": garment_type,
+        "person_gender": person_gender,
+    }
+def execute_single_edit(image_data: bytes, instruction: str,
+                        garment_type: str = "unknown") -> dict:
+    """执行单图编辑 — wanx2.1-imageedit"""
+    data_uri = _process_image_to_uri(image_data)
+    prompt = (
+        f"编辑修改这张图片中的服装，改成：{instruction}。"
+        f"必须保留原图中人物面部、发型、姿势、背景完全不变，只替换服装部分。"
+    )
+    response = ImageSynthesis.call(
+        model="wanx2.1-imageedit",
+        function="description_edit",
+        prompt=prompt,
+        base_image_url=data_uri,
+        n=1,
+    )
+    if response.status_code != 200:
+        return {"success": False, "error": response.message}
+    return {"success": True, "url": response.output.results[0].url, "model": "wanx2.1-imageedit"}
+
+
+def execute_composite(image_data1: bytes, image_data2: bytes,
+                      instruction: str, person_gender: str = "unknown") -> dict:
+    """执行多图合成 — qwen-image-edit-plus"""
+    data_uri1 = _process_image_to_uri(image_data1)
+    data_uri2 = _process_image_to_uri(image_data2)
+    messages = [{"role": "user", "content": [
+        {"image": data_uri1}, {"image": data_uri2},
+        {"text": f"将这两张图合成一张图。{instruction}"}
+    ]}]
+    response = MultiModalConversation.call(model="qwen-image-edit-plus", messages=messages)
+    url = response["output"]["choices"][0]["message"]["content"][0]["image"]
+    return {"success": True, "url": url, "model": "qwen-image-edit-plus"}
+
+
+def execute_structured_task(task) -> dict:
+    """根据结构化任务分发到对应执行器，统一记录 task_id/model/latency/status/error."""
+    from tools.task_router import TaskType
+
+    task_type_str = task.task if isinstance(task.task, str) else task.task.value
+    task_id = str(uuid.uuid4())[:8]
+    t0 = time.time()
+
+    try:
+        if task_type_str == "virtual_tryon":
+            result = execute_virtual_tryon(
+                person_data=task.person_image,
+                garment_data=task.garment_image,
+                garment_type=task.garment_type,
+                person_gender=task.person_gender,
+                instruction=task.edit_instruction or "",
+            )
+        elif task_type_str == "single_edit":
+            result = execute_single_edit(
+                image_data=task.source_image or task.person_image,
+                instruction=task.edit_instruction,
+                garment_type=task.garment_type,
+            )
+        elif task_type_str == "composite":
+            result = execute_composite(
+                image_data1=task.person_image,
+                image_data2=task.garment_image,
+                instruction=task.edit_instruction or "",
+                person_gender=task.person_gender,
+            )
+        else:
+            return {"success": False, "task_id": task_id, "task": task_type_str, "error": f"unknown task type: {task_type_str}"}
+
+        latency_ms = int((time.time() - t0) * 1000)
+        result["task_id"] = task_id
+        result["task"] = result.get("task", task_type_str)
+        result["latencyMs"] = latency_ms
+        result["error"] = ""
+        return result
+
+    except Exception as exc:
+        latency_ms = int((time.time() - t0) * 1000)
+        return {
+            "success": False,
+            "task_id": task_id,
+            "task": task_type_str,
+            "model": "",
+            "url": "",
+            "latencyMs": latency_ms,
+            "error": str(exc),
+        }
+
+
+# ── 原有 Agent 工具（保持向后兼容）───────────────────────────────
 
 
 @tool(description="用 qwen-vl-max 描述图片，返回文本+关键词")

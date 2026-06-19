@@ -28,8 +28,8 @@ defineProps({
       <div v-else class="chat-msg chat-msg--agent">
         <div class="chat-bubble chat-bubble--agent">
           <AgentProgress
-            v-if="m.progress && m.progress.length"
-            :steps="m.progress"
+            v-if="m.steps && m.steps.length"
+            :steps="m.steps"
             :collapsed="false"
           />
           <div v-if="m.images && m.images.length" class="chat-result-imgs">

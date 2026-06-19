@@ -1,0 +1,39 @@
+{
+  "servers": {
+    "apifox": {
+      "transport": "sse",
+      "url": "http://localhost:9090/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_APIFOX_API_KEY"
+      },
+      "description": "Apifox API 管理 — 查询和调试 API 文档"
+    },
+    "apifox-openapi": {
+      "transport": "sse",
+      "url": "http://localhost:9091/mcp",
+      "description": "Apifox OpenAPI 规范服务"
+    },
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ],
+      "description": "本地文件系统操作 — 读取、写入、搜索文件"
+    },
+    "weather": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-weather"
+      ],
+      "env": {
+        "WEATHER_API_KEY": "YOUR_WEATHER_API_KEY"
+      },
+      "description": "天气预报服务 — 查询城市天气数据"
+    }
+  }
+}

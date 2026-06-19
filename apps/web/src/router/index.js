@@ -13,6 +13,7 @@ const router = createRouter({
     { path: '/edit', name: 'edit', component: () => import('../views/EditView.vue'), meta: { auth: true, title: '图片编辑' } },
     { path: '/merge', name: 'merge', component: () => import('../views/MergeView.vue'), meta: { auth: true, title: '图片合并' } },
     { path: '/dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue'), meta: { auth: true, title: '控制面板' } },
+
     { path: '/:pathMatch(.*)*', redirect: '/chat' },
   ],
 })

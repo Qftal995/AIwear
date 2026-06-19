@@ -1,0 +1,38 @@
+[
+  {
+    "id": "smoke_001",
+    "input": "明天杭州面试穿什么？男生",
+    "tags": ["smoke", "styling", "male", "weather", "rag"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "smoke_002",
+    "input": "周末户外婚礼，女生，下雨，不想穿高跟鞋",
+    "tags": ["smoke", "styling", "female", "weather", "rag"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "smoke_003",
+    "input": "我不喜欢蓝色，换一套",
+    "tags": ["smoke", "memory", "preference"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "smoke_004",
+    "input": "查询杭州天气",
+    "tags": ["smoke", "weather_only"],
+    "expected": {
+      "agent": "stylist",
+      "action": "weather"
+    }
+  }
+]

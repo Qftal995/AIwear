@@ -1,10 +1,14 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { getWardrobe, uploadMyImage } from '../services/api'
+import { getWardrobe, uploadMyImage, deleteWardrobeItem, classifyWardrobe } from '../services/api'
+import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
+
+const authStore = useAuthStore()
 
 const items = ref([])
 const loading = ref(false)
+const classifying = ref(false)
 const currentPage = ref(1)
 const pageSize = 12
 const fileInput = ref(null)
@@ -69,6 +73,32 @@ const onFileSelected = async (e) => {
   }
 }
 
+const deleteItem = async (id) => {
+  if (!confirm('确定要删除这件衣物吗？')) return
+  try {
+    await deleteWardrobeItem(id)
+    ElMessage.success('已删除')
+    await fetchItems()
+  } catch (err) {
+    ElMessage.error(err?.message || '删除失败')
+  }
+}
+
+const classifyAll = async () => {
+  if (!confirm('将使用AI对所有衣橱物品进行智能分类（品类/颜色/风格/季节），需要1-2分钟。继续？')) return
+  classifying.value = true
+  try {
+    const userId = authStore.user?.userId || 'default'
+    const { data } = await classifyWardrobe(userId)
+    ElMessage.success(data?.message || '分类任务已启动')
+    setTimeout(fetchItems, 5000)
+  } catch (err) {
+    ElMessage.error(err?.message || '分类失败')
+  } finally {
+    classifying.value = false
+  }
+}
+
 const filteredItems = computed(() => {
   let result = [...items.value]
 
@@ -87,9 +117,8 @@ const filteredItems = computed(() => {
 
   if (filters.value.sort === 'popular') {
     result.sort((a, b) => (b.matchCount || 0) - (a.matchCount || 0))
-  } else {
-    result.sort((a, b) => (b.uploadTime || '').localeCompare(a.uploadTime || ''))
   }
+  // Items arrive from API sorted newest-first; only re-sort for popularity
 
   return result
 })
@@ -132,6 +161,10 @@ onMounted(fetchItems)
       <button class="wardrobe-upload-btn" @click="triggerUpload">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         上传图片
+      </button>
+      <button class="wardrobe-upload-btn wardrobe-classify-btn" @click="classifyAll" :disabled="classifying">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10h-10V2z"/><path d="M12 2a10 10 0 0 1 10 10h-10V2z"/></svg>
+        {{ classifying ? '分类中...' : '智能分类' }}
       </button>
       <input
         type="file"
@@ -197,7 +230,7 @@ onMounted(fetchItems)
               <p v-if="item.uploadTime" class="wco-time">上传: {{ formatTime(item.uploadTime) }}</p>
               <div class="wco-actions">
                 <button class="wco-btn wco-btn-match">加入搭配</button>
-                <button class="wco-btn wco-btn-del">删除</button>
+                <button class="wco-btn wco-btn-del" @click="deleteItem(item.id)">删除</button>
               </div>
             </div>
           </div>
@@ -254,6 +287,13 @@ onMounted(fetchItems)
 }
 .wardrobe-upload-btn:hover {
   opacity: 0.9;
+}
+.wardrobe-upload-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.wardrobe-classify-btn {
+  background: linear-gradient(135deg, #12B76A 0%, #0E9F5C 100%);
 }
 .chat-file-hidden {
   display: none;

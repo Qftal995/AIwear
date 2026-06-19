@@ -1,0 +1,38 @@
+[
+  {
+    "id": "agent_001",
+    "input": "明天杭州面试穿什么？男生",
+    "tags": ["agent", "multi_tool", "male"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "agent_002",
+    "input": "周末户外婚礼，女生，下雨，不想穿高跟鞋",
+    "tags": ["agent", "multi_tool", "female", "constraint"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "agent_003",
+    "input": "用我衣橱里的黑西装搭一套",
+    "tags": ["agent", "wardrobe", "specific_item"],
+    "expected": {
+      "agent": "wardrobe",
+      "action": "search"
+    }
+  },
+  {
+    "id": "agent_004",
+    "input": "把两张图合成试衣效果",
+    "tags": ["agent", "visualizer", "hitl"],
+    "expected": {
+      "agent": "visualizer",
+      "action": "merge"
+    }
+  }
+]

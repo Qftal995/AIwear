@@ -11,9 +11,9 @@ import com.bitejiuyeke.dto.response.UploadImageResponse;
 import com.bitejiuyeke.entity.ImageFile;
 import com.bitejiuyeke.mapper.ImageFileMapper;
 import com.bitejiuyeke.service.FileService;
+import com.bitejiuyeke.service.OssService;
 import com.bitejiuyeke.service.PythonImageService;
 import com.bitejiuyeke.service.RecordService;
-import com.bitejiuyeke.util.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,13 +21,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
-// 文件上传实现类
 @Slf4j
 @Service
 public class FileServiceImpl implements FileService {
@@ -35,7 +33,7 @@ public class FileServiceImpl implements FileService {
     @Autowired
     private ImageFileMapper imageFileMapper;
 
-    private static final long MAX_FILE_SIZE = 52_428_800L; // 50MB
+    private static final long MAX_FILE_SIZE = 52_428_800L;
 
     @Autowired
     private PythonImageService pythonImageService;
@@ -43,15 +41,18 @@ public class FileServiceImpl implements FileService {
     @Value("${file.upload.dir:uploads}")
     private String uploadBaseDir;
 
-    @Autowired
-    private JwtUtil jwtUtil;
+    @Value("${app.public-url:http://localhost:8081}")
+    private String appPublicUrl;
 
     @Autowired
     private RecordService recordService;
 
+    @Autowired
+    private OssService ossService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public UploadImageResponse uploadImage(MultipartFile file, String authorization) {
+    public UploadImageResponse uploadImage(MultipartFile file, Long userId) {
         if (file == null) {
             throw new RuntimeException("缺少上传文件");
         }
@@ -66,10 +67,6 @@ public class FileServiceImpl implements FileService {
             throw new RuntimeException("图片大小超过限制");
         }
 
-        String token = jwtUtil.parseToken(authorization);
-
-        Long userId = jwtUtil.getUserId(token);
-
         String originalFileName = file.getOriginalFilename();
         if (originalFileName == null || originalFileName.isBlank()) {
             originalFileName = "image";
@@ -78,7 +75,6 @@ public class FileServiceImpl implements FileService {
         String extension = getFileExtension(originalFileName, file.getContentType());
         String uuid = UUID.randomUUID().toString().replace("-", "");
 
-        // 本地“系统”存储路径：uploads/images/{uuid}.ext
         Path localDir = Paths.get(uploadBaseDir, "images");
         try {
             Files.createDirectories(localDir);
@@ -90,18 +86,26 @@ public class FileServiceImpl implements FileService {
         Path localFilePath = localDir.resolve(finalLocalFileName);
 
         try {
-            // 1) 上传到本地存储
             file.transferTo(localFilePath);
             if (!pythonImageService.validateImage(localFilePath)) {
                 throw new RuntimeException("图片审核不通过！");
             }
-            // 2) 本地存储URL（跳过OSS，直接用本地路径）
-            String url = "http://localhost:8081/uploads/images/" + finalLocalFileName;
 
-            // 2.5) 上传到 Python（用于后续搜索向量化）
+            String url;
+            if (ossService.isEnabled()) {
+                String objectName = "aiwear/images/" + finalLocalFileName;
+                try (var is = Files.newInputStream(localFilePath)) {
+                    url = ossService.upload(objectName, is, file.getContentType());
+                }
+                if (url == null) {
+                    url = appPublicUrl + "/uploads/images/" + finalLocalFileName;
+                }
+            } else {
+                url = appPublicUrl + "/uploads/images/" + finalLocalFileName;
+            }
+
             pythonImageService.uploadImage(userId, url);
 
-            // 3) 落库
             ImageFile record = new ImageFile();
             record.setUserId(userId);
             record.setFileName(originalFileName);
@@ -121,64 +125,72 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
-    public List<ImageFile> myImages(String authorization) {
-        String token = jwtUtil.parseToken(authorization);
-        Long userId = jwtUtil.getUserId(token);
+    public List<ImageFile> myImages(Long userId) {
         LambdaQueryWrapper<ImageFile> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(ImageFile::getUserId, userId).orderByDesc(ImageFile::getId);
         return imageFileMapper.selectList(queryWrapper);
     }
 
     @Override
-    public List<SearchImageResponse> search(String authorization, SearchImageRequest searchImageRequest) {
-        // 1. 先去获取用户id
-        String token = jwtUtil.parseToken(authorization);
-        Long userId = jwtUtil.getUserId(token);
-        List<ImageFile> imageFiles = myImages(authorization);
+    public List<SearchImageResponse> search(Long userId, SearchImageRequest searchImageRequest) {
+        List<ImageFile> imageFiles = myImages(userId);
         Map<String, String> map = new HashMap<>();
         for (ImageFile imageFile : imageFiles) {
             map.put(imageFile.getOssUrl(), imageFile.getFileName());
         }
-        // 2. 调用python服务
         List<SearchImageResponse> searchImageResponseList = pythonImageService.search(userId, searchImageRequest);
         for (SearchImageResponse searchImageResponse : searchImageResponseList) {
             searchImageResponse.setFileName(map.get(searchImageResponse.getFilePath()));
         }
-        // 3. 拿到数据，进行封装
         return searchImageResponseList;
     }
 
     @Override
-    public EditImageResponse edit(String authorization, EditImageRequest editImageRequest) {
-        // 1. 鉴权 -> 用户只能编辑自己上传的图片
-        List<ImageFile> imageFiles = myImages(authorization);
-        // 2. 判断当前图片地址是否包含在imageFiles的ossUrl字段集合中
+    public EditImageResponse edit(Long userId, EditImageRequest editImageRequest) {
+        List<ImageFile> imageFiles = myImages(userId);
         List<String> urls = imageFiles.stream().map(ImageFile::getOssUrl).toList();
         if (!urls.contains(editImageRequest.getImage())) {
             throw new RuntimeException("只能编辑自己上传的图片");
         }
-        // 3. 调用python服务，封装最后的返回结果
         EditImageResponse editImageResponse = pythonImageService.edit(editImageRequest);
-
-        // 新增调用记录
-        Long userId = jwtUtil.getUserId(jwtUtil.parseToken(authorization));
         recordService.editSave(userId, editImageRequest, editImageResponse);
         return editImageResponse;
     }
 
     @Override
-    public MergeImageResponse merge(String authorization, MergeImageRequest mergeImageRequest) {
-        // 1. 鉴权 -> 用户只能合并自己上传的图片
-        List<ImageFile> imageFiles = myImages(authorization);
-        // 2. 判断上传的图片是否包含在imageFiles的ossUrl字段集合中
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteImage(Long userId, Long imageId) {
+        ImageFile record = imageFileMapper.selectById(imageId);
+        if (record == null) {
+            throw new RuntimeException("图片不存在");
+        }
+        if (!record.getUserId().equals(userId)) {
+            throw new RuntimeException("只能删除自己的图片");
+        }
+
+        String ossUrl = record.getOssUrl();
+        if (ossUrl != null && !ossUrl.isBlank()) {
+            pythonImageService.deleteByUrl(ossUrl);
+        }
+
+        imageFileMapper.deleteById(imageId);
+
+        try {
+            Path localPath = Paths.get(uploadBaseDir, "images",
+                    ossUrl != null ? ossUrl.substring(ossUrl.lastIndexOf('/') + 1) : "");
+            Files.deleteIfExists(localPath);
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Override
+    public MergeImageResponse merge(Long userId, MergeImageRequest mergeImageRequest) {
+        List<ImageFile> imageFiles = myImages(userId);
         List<String> urls = imageFiles.stream().map(ImageFile::getOssUrl).toList();
         if (!urls.contains(mergeImageRequest.getImage1()) || !urls.contains(mergeImageRequest.getImage2())) {
             throw new RuntimeException("只能合并自己上传的图片");
         }
-        // 3. 调用python服务
         MergeImageResponse mergeImageResponse = pythonImageService.merge(mergeImageRequest);
-        // 新增调用记录
-        Long userId = jwtUtil.getUserId(jwtUtil.parseToken(authorization));
         recordService.mergeSave(userId, mergeImageRequest, mergeImageResponse);
         return mergeImageResponse;
     }
@@ -208,4 +220,3 @@ public class FileServiceImpl implements FileService {
         return ".png";
     }
 }
-

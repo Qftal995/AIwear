@@ -7,7 +7,7 @@
  */
 import { onMounted, ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { myImages, uploadMyImage, searchImages } from '../services/api'
+import { myImages, uploadMyImage, searchImages, deleteMyImage } from '../services/api'
 import emptyDataIcon from '../assets/image/empty-data.svg'
 import imageSearchEmptyIcon from '../assets/image/image-search-empty.svg'
 import uploadIcon from '../assets/image/upload.svg'
@@ -70,6 +70,17 @@ const performImageUpload = async () => {
     ElMessage.error(err?.message || '上传失败')
   } finally {
     isUploading.value = false
+  }
+}
+
+const handleDeleteImage = async (id) => {
+  if (!confirm('确定要删除这张图片吗？')) return
+  try {
+    await deleteMyImage(id)
+    ElMessage.success('已删除')
+    await fetchMyImagesList()
+  } catch (err) {
+    ElMessage.error(err?.message || '删除失败')
   }
 }
 
@@ -273,6 +284,9 @@ const submitImageSearch = async () => {
               :preview-src-list="[getImageUrl(img)]"
               preview-teleported
             />
+            <button class="item-delete-btn" title="删除" @click.stop="handleDeleteImage(img.id)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            </button>
           </div>
           <div class="item-name">
             <span class="item-name-text">{{ getDisplayFileName(img.fileName) }}</span>
@@ -662,11 +676,36 @@ const submitImageSearch = async () => {
   border: 1px solid #E5E7EB;
 }
 .item-img-wrap {
+  position: relative;
   width: 194px;
   height: 259px;
   flex-shrink: 0;
   overflow: hidden;
   border-radius: 0;
+}
+.item-delete-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 2;
+}
+.item:hover .item-delete-btn {
+  opacity: 1;
+}
+.item-delete-btn:hover {
+  background: rgba(240, 68, 56, 0.85);
 }
 .item-img {
   width: 100%;

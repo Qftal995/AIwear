@@ -8,3 +8,7 @@ dist/
 .env
 data/
 uploads/
+.idea/
+apps/ai-service/eval/results/
+apps/ai-service/config/mcp_servers.json
+check.ps1

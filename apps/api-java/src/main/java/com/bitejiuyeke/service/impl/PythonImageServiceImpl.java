@@ -12,7 +12,6 @@ import com.bitejiuyeke.dto.response.PythonUploadImageResponse;
 import com.bitejiuyeke.dto.response.SearchImageResponse;
 import com.bitejiuyeke.dto.response.WardrobeItemResponse;
 import com.bitejiuyeke.service.PythonImageService;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,16 +34,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -53,22 +49,20 @@ import java.util.UUID;
 @Service
 public class PythonImageServiceImpl implements PythonImageService {
 
-    @Value("${python.service.base-url:http://127.0.0.1:5000}")
+    @Value("${python.service.base-url:http://127.0.0.1:5001}")
     private String pythonBaseUrl;
 
-    private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
+    @Value("${app.public-url:http://localhost:8081}")
+    private String appPublicUrl;
 
     @Value("${file.upload.dir:uploads}")
     private String uploadBaseDir;
 
     @Autowired
-    public PythonImageServiceImpl(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(30))
-                .build();
-    }
+    private RestTemplate restTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Override
     public void uploadImage(Long userId, String ossUrl) {
@@ -76,36 +70,14 @@ public class PythonImageServiceImpl implements PythonImageService {
         req.setUserId(userId);
         req.setOssUrl(ossUrl);
 
-        String requestJson;
-        try {
-            requestJson = objectMapper.writeValueAsString(req);
-        } catch (Exception e) {
-            throw new RuntimeException("构造请求体失败");
-        }
-
         String url = pythonBaseUrl + "/api/upload-image";
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(60))
-                .POST(HttpRequest.BodyPublishers.ofString(requestJson, StandardCharsets.UTF_8))
-                .build();
-
-        HttpResponse<String> response;
-        try {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            log.error("Python /api/upload-image 失败: {}", e.getMessage());
-            throw new RuntimeException("Python 服务调用失败");
-        }
-
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            log.error("Python 非 2xx: status={}", response.statusCode());
-            throw new RuntimeException("Python 服务返回错误");
-        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<PythonUploadImageRequest> entity = new HttpEntity<>(req, headers);
 
         try {
-            JsonNode root = objectMapper.readTree(response.body());
+            ResponseEntity<String> resp = restTemplate.postForEntity(url, entity, String.class);
+            JsonNode root = objectMapper.readTree(resp.getBody());
             boolean success = root.path("success").asBoolean(false);
             if (!success) {
                 String error = root.path("error").asText("unknown");
@@ -114,7 +86,8 @@ public class PythonImageServiceImpl implements PythonImageService {
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
-            log.error("解析 Python 响应失败: {}", e.getMessage());
+            log.error("Python /api/upload-image 失败: {}", e.getMessage());
+            throw new RuntimeException("Python 服务调用失败");
         }
     }
 
@@ -128,8 +101,7 @@ public class PythonImageServiceImpl implements PythonImageService {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("file", new FileSystemResource(filePath));
             HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
-            RestTemplate rest = new RestTemplate();
-            ResponseEntity<String> resp = rest.postForEntity(url, entity, String.class);
+            ResponseEntity<String> resp = restTemplate.postForEntity(url, entity, String.class);
             return objectMapper.readTree(resp.getBody()).path("allow").asBoolean(false);
         } catch (Exception e) {
             log.error("validateImage 失败: {}", e.getMessage());
@@ -165,8 +137,7 @@ public class PythonImageServiceImpl implements PythonImageService {
             }
 
             HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
-            RestTemplate rest = new RestTemplate();
-            ResponseEntity<String> resp = rest.postForEntity(url, entity, String.class);
+            ResponseEntity<String> resp = restTemplate.postForEntity(url, entity, String.class);
             JsonNode root = objectMapper.readTree(resp.getBody());
             JsonNode data = root.path("data");
 
@@ -204,18 +175,18 @@ public class PythonImageServiceImpl implements PythonImageService {
             body.add("instruction", instruction);
 
             HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
-            RestTemplate rest = new RestTemplate();
-            ResponseEntity<String> resp = rest.postForEntity(url, entity, String.class);
+            ResponseEntity<String> resp = restTemplate.postForEntity(url, entity, String.class);
 
             JsonNode root = objectMapper.readTree(resp.getBody());
             String pythonUrl = root.path("url").asText("");
             if (pythonUrl.isEmpty()) {
-                throw new RuntimeException("Python 编辑未返回 URL");
+                String error = root.path("error").asText("unknown");
+                throw new RuntimeException("Python error: " + error);
             }
 
             editTemp = downloadToTempFile(pythonUrl);
             String localFileName = saveLocalFile(editTemp, "edited_");
-            String saveUrl = "http://localhost:8081/uploads/images/" + localFileName;
+            String saveUrl = appPublicUrl + "/uploads/images/" + localFileName;
 
             EditImageResponse result = new EditImageResponse();
             result.setUrl(pythonUrl);
@@ -253,18 +224,19 @@ public class PythonImageServiceImpl implements PythonImageService {
             body.add("instruction", instruction);
 
             HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
-            RestTemplate rest = new RestTemplate();
-            ResponseEntity<String> resp = rest.postForEntity(pyUrl, entity, String.class);
+            ResponseEntity<String> resp = restTemplate.postForEntity(pyUrl, entity, String.class);
 
             JsonNode root = objectMapper.readTree(resp.getBody());
             String pythonUrl = root.path("url").asText("");
             if (pythonUrl.isEmpty()) {
-                throw new RuntimeException("Python 合并未返回 URL");
+                String error = root.path("error").asText("unknown");
+                String success = root.path("success").asText("false");
+                throw new RuntimeException("Python error: " + error);
             }
 
             mergeTemp = downloadToTempFile(pythonUrl);
             String localFileName = saveLocalFile(mergeTemp, "merged_");
-            String saveUrl = "http://localhost:8081/uploads/images/" + localFileName;
+            String saveUrl = appPublicUrl + "/uploads/images/" + localFileName;
 
             MergeImageResponse result = new MergeImageResponse();
             result.setUrl(pythonUrl);
@@ -275,6 +247,94 @@ public class PythonImageServiceImpl implements PythonImageService {
             throw new RuntimeException("图片合并失败: " + e.getMessage());
         } finally {
             deleteTempFiles(temp1, temp2, mergeTemp);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Async image task
+    // ------------------------------------------------------------------
+
+    @Override
+    public Map<String, Object> submitAsyncTask(MultipartFile file, String instruction) {
+        String url = pythonBaseUrl + "/api/tool/image/async";
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("instruction", instruction);
+
+            byte[] fileBytes = file.getBytes();
+            String filename = file.getOriginalFilename();
+            ByteArrayResource fileResource = new ByteArrayResource(fileBytes) {
+                @Override
+                public String getFilename() {
+                    return filename;
+                }
+            };
+            body.add("file", fileResource);
+
+            HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+            ResponseEntity<String> resp = restTemplate.postForEntity(url, entity, String.class);
+
+            JsonNode root = objectMapper.readTree(resp.getBody());
+            return objectMapper.convertValue(root, new TypeReference<Map<String, Object>>() {});
+
+        } catch (Exception e) {
+            log.error("submitAsyncTask 失败: {}", e.getMessage());
+            throw new RuntimeException("提交异步图片任务失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public Map<String, Object> getTaskStatus(String taskId) {
+        try {
+            String url = pythonBaseUrl + "/api/tool/image/status/" + taskId;
+            ResponseEntity<String> resp = restTemplate.getForEntity(url, String.class);
+
+            JsonNode root = objectMapper.readTree(resp.getBody());
+            return objectMapper.convertValue(root, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            log.error("getTaskStatus 失败: taskId={}, error={}", taskId, e.getMessage());
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("error", e.getMessage());
+            err.put("taskId", taskId);
+            return err;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Session stats
+    // ------------------------------------------------------------------
+
+    @Override
+    public Map<String, Object> getSessionStats(String sessionId) {
+        try {
+            String url = pythonBaseUrl + "/api/session-stats";
+            if (sessionId != null && !sessionId.isBlank()) {
+                url += "?sessionId=" + java.net.URLEncoder.encode(sessionId, StandardCharsets.UTF_8);
+            }
+            ResponseEntity<String> resp = restTemplate.getForEntity(url, String.class);
+
+            JsonNode root = objectMapper.readTree(resp.getBody());
+            JsonNode data = root.path("data");
+            return objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            log.error("getSessionStats 失败: {}", e.getMessage());
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("error", "获取会话统计失败: " + e.getMessage());
+            return err;
+        }
+    }
+
+    @Override
+    public void deleteByUrl(String ossUrl) {
+        try {
+            String url = pythonBaseUrl + "/api/wardrobe?url=" + java.net.URLEncoder.encode(ossUrl, StandardCharsets.UTF_8);
+            restTemplate.delete(url);
+        } catch (Exception e) {
+            log.error("deleteByUrl 失败 (non-fatal): {}", e.getMessage());
         }
     }
 
@@ -294,24 +354,26 @@ public class PythonImageServiceImpl implements PythonImageService {
         }
 
         try {
-            Map<String, Object> reqBody = new java.util.LinkedHashMap<>();
+            Map<String, Object> reqBody = new LinkedHashMap<>();
             reqBody.put("message", message);
             reqBody.put("userId", userId);
             reqBody.put("sessionId", sessionId);
-            String requestJson = objectMapper.writeValueAsString(reqBody);
+            if (chatRequest.getImageUrls() != null && !chatRequest.getImageUrls().isEmpty()) {
+                reqBody.put("imageUrls", chatRequest.getImageUrls());
+                reqBody.put("imageUrl", chatRequest.getImageUrls().get(0));
+            } else if (chatRequest.getImageUrl() != null && !chatRequest.getImageUrl().isBlank()) {
+                reqBody.put("imageUrl", chatRequest.getImageUrl());
+                reqBody.put("imageUrls", List.of(chatRequest.getImageUrl()));
+            }
 
             String url = pythonBaseUrl + "/api/chat";
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(120))
-                    .POST(HttpRequest.BodyPublishers.ofString(requestJson, StandardCharsets.UTF_8))
-                    .build();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(reqBody, headers);
 
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            ResponseEntity<String> resp = restTemplate.postForEntity(url, entity, String.class);
+            JsonNode root = objectMapper.readTree(resp.getBody());
 
-            JsonNode root = objectMapper.readTree(response.body());
             ChatResponse result = new ChatResponse();
             result.setSessionId(root.path("sessionId").asText(sessionId));
             result.setReply(root.path("reply").asText(""));
@@ -339,17 +401,9 @@ public class PythonImageServiceImpl implements PythonImageService {
     public List<WardrobeItemResponse> getWardrobe(Long userId) {
         try {
             String url = pythonBaseUrl + "/api/wardrobe/" + userId;
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Accept", "application/json")
-                    .timeout(Duration.ofSeconds(30))
-                    .GET()
-                    .build();
+            ResponseEntity<String> resp = restTemplate.getForEntity(url, String.class);
 
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-
-            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode root = objectMapper.readTree(resp.getBody());
             JsonNode data = root.path("data");
             List<WardrobeItemResponse> list = new ArrayList<>();
             for (JsonNode node : data) {

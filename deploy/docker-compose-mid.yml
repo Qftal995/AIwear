@@ -1,4 +1,3 @@
-version: '3.8'
 #启动命令 docker compose -p bite_wear -f docker-compose-mid.yml up -d
 services:
   bite_wear-mysql:
@@ -7,9 +6,7 @@ services:
     ports:
       - "3307:3306"
     volumes:
-      # 数据挂载
       - ../data/bite_wear/mysql/data:/var/lib/mysql
-      # 配置挂载
       - ./mysql/init/init.sql:/docker-entrypoint-initdb.d/init.sql
       - ./mysql/sql:/opt/sql
     command: [
@@ -44,6 +41,7 @@ services:
       nofile:
         soft: 20000
         hard: 40000
+
   bite_wear-redis:
     container_name: bite_wear-redis
     image: redis:7.0.15
@@ -61,21 +59,81 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-  bite_wear-web:
-    image: nginx:1.24.0
-    container_name: bite_wear-web
+
+  bite_wear-rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: bite_wear-rabbitmq
     restart: always
     networks:
       - bite_wear_network
     ports:
-      - "80:80"
+      - "5672:5672"
+      - "15672:15672"
     volumes:
-      - ./nginx/conf/nginx.conf:/etc/nginx/nginx.conf
-      - ../apps/web/dist:/data/bite_wear/web/dist
-    ulimits:
-      nproc: 65535
-      nofile:
-        soft: 20000
-        hard: 40000
+      - ../data/bite_wear/rabbitmq/data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: aiwear
+      RABBITMQ_DEFAULT_PASS: aiwear@mq
+      RABBITMQ_DEFAULT_VHOST: /
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Application Services ──
+
+  aiwear-python:
+    container_name: aiwear-python
+    build:
+      context: ../apps/ai-service
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - FAISS_INDEX_PATH=/data/faiss_index
+      - RAG_KNOWLEDGE_DIR=/data/knowledge
+      - REDIS_HOST=bite_wear-redis
+      - PYTHON_SERVICE_URL=http://aiwear-python:5001
+    volumes:
+      - ../data/faiss_index:/data/faiss_index
+      - ../data/knowledge:/data/knowledge
+    restart: always
+    networks:
+      - bite_wear_network
+    depends_on:
+      bite_wear-redis:
+        condition: service_healthy
+
+  aiwear-java:
+    container_name: aiwear-java
+    build:
+      context: ../apps/api-java
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - MYSQL_URL=jdbc:mysql://bite_wear-mysql:3306/bite_wear?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=utf8
+      - MYSQL_USER=bite
+      - MYSQL_PASSWORD=bite@123
+      - REDIS_HOST=bite_wear-redis
+      - PYTHON_SERVICE_URL=http://aiwear-python:5001
+      - APP_PUBLIC_URL=http://localhost:8081
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - UPLOAD_DIR=/data/uploads
+      - UPLOAD_RESOURCE_LOCATIONS=file:/data/uploads/
+    volumes:
+      - ../data/uploads:/data/uploads
+    restart: always
+    networks:
+      - bite_wear_network
+    depends_on:
+      bite_wear-mysql:
+        condition: service_healthy
+      aiwear-python:
+        condition: service_started
+
 networks:
   bite_wear_network:

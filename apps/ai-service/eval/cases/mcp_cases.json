@@ -1,0 +1,38 @@
+[
+  {
+    "id": "mcp_001",
+    "input": "北京今天天气怎么样？",
+    "tags": ["mcp", "weather"],
+    "expected": {
+      "agent": "stylist",
+      "action": "weather"
+    }
+  },
+  {
+    "id": "mcp_002",
+    "input": "梨形身材怎么穿搭？",
+    "tags": ["mcp", "body_shape"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "mcp_003",
+    "input": "周末约会穿什么？",
+    "tags": ["mcp", "rag"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "mcp_004",
+    "input": "给我推荐一套商务穿搭",
+    "tags": ["mcp", "rag", "styling"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  }
+]

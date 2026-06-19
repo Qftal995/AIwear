@@ -3,60 +3,107 @@
         "id": "wardrobe_001",
         "input": "我有哪些白色衣服",
         "expected": {"agent": "wardrobe", "action": "search"},
-        "tags": ["wardrobe", "search"]
+        "tags": ["wardrobe", "search"],
+        "actual_output": ""
     },
     {
         "id": "wardrobe_002",
         "input": "添加一件白色T恤到衣橱",
         "expected": {"agent": "wardrobe", "action": "add"},
-        "tags": ["wardrobe", "add"]
+        "tags": ["wardrobe", "add"],
+        "actual_output": ""
     },
     {
         "id": "wardrobe_003",
         "input": "删除那件不喜欢的衬衫",
         "expected": {"agent": "wardrobe", "action": "remove"},
-        "tags": ["wardrobe", "remove"]
+        "tags": ["wardrobe", "remove"],
+        "actual_output": ""
     },
     {
         "id": "stylist_001",
         "input": "明晚约会穿什么",
         "expected": {"agent": "stylist", "action": "recommend"},
-        "tags": ["stylist", "recommend"]
+        "tags": ["stylist", "recommend"],
+        "actual_output": ""
     },
     {
         "id": "stylist_002",
         "input": "通勤上班怎么搭配",
         "expected": {"agent": "stylist", "action": "recommend"},
-        "tags": ["stylist", "recommend"]
+        "tags": ["stylist", "recommend"],
+        "actual_output": ""
     },
     {
         "id": "visualizer_001",
         "input": "把这件衣服改成红色",
         "expected": {"agent": "visualizer", "action": "edit"},
-        "tags": ["visualizer", "edit"]
+        "tags": ["visualizer", "edit"],
+        "actual_output": ""
     },
     {
         "id": "visualizer_002",
         "input": "帮我换装试穿这件裙子",
         "expected": {"agent": "visualizer", "action": "merge"},
-        "tags": ["visualizer", "merge"]
+        "tags": ["visualizer", "merge"],
+        "actual_output": ""
     },
     {
         "id": "weather_001",
         "input": "今天北京天气怎么样",
         "expected": {"agent": "stylist", "action": "weather"},
-        "tags": ["weather", "query"]
+        "tags": ["weather", "query"],
+        "actual_output": ""
     },
     {
         "id": "copywriter_001",
         "input": "帮我写一段这套穿搭的文案",
         "expected": {"agent": "copywriter", "action": "write"},
-        "tags": ["copywriter", "write"]
+        "tags": ["copywriter", "write"],
+        "actual_output": ""
     },
     {
         "id": "stylist_003",
         "input": "周末郊游穿什么",
         "expected": {"agent": "stylist", "action": "recommend"},
-        "tags": ["stylist", "recommend"]
+        "tags": ["stylist", "recommend"],
+        "actual_output": ""
+    },
+    {
+        "id": "boundary_empty_input",
+        "input": "",
+        "expected": {"agent": "supervisor", "action": "unknown"},
+        "tags": ["boundary", "edge_case"],
+        "actual_output": ""
+    },
+    {
+        "id": "boundary_very_long",
+        "input": "帮我搭配一套衣服要适合正式场合而且还要舒适同时最好能搭配我衣橱里现有的衣服如果可以的话再写一段文案描述这套搭配并且把衣服颜色改成蓝色另外还要查看一下天气情况最后帮我删除一些不喜欢的衣服",
+        "expected": {"agent": "wardrobe", "action": "remove"},
+        "tags": ["boundary", "long_input", "multi_intent", "edge_case"],
+        "_note": "stub优先匹配显式动作词'删除'；真实agent会做NLP意图分析",
+        "actual_output": ""
+    },
+    {
+        "id": "boundary_ambiguous",
+        "input": "你好",
+        "expected": {"agent": "supervisor", "action": "unknown"},
+        "tags": ["boundary", "greeting", "edge_case"],
+        "actual_output": ""
+    },
+    {
+        "id": "boundary_mixed_intents",
+        "input": "我想看看衣橱里的衣服，然后推荐一套搭配，再写个文案",
+        "expected": {"agent": "copywriter", "action": "write"},
+        "tags": ["boundary", "multi_intent", "edge_case"],
+        "_note": "stub优先匹配'文案'；真实agent会按意图顺序返回wardrobe→stylist→copywriter",
+        "actual_output": ""
+    },
+    {
+        "id": "boundary_special_chars",
+        "input": "添加一件￥299的#潮牌#T恤 到衣橱！！！",
+        "expected": {"agent": "wardrobe", "action": "add"},
+        "tags": ["boundary", "special_chars", "edge_case"],
+        "actual_output": ""
     }
 ]

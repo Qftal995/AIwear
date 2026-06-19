@@ -1,0 +1,42 @@
+[
+  {
+    "id": "hitl_001",
+    "input": "把这两张图合成试衣效果",
+    "tags": ["hitl", "visualizer", "merge", "image_required"],
+    "expected": {
+      "agent": "visualizer",
+      "action": "merge"
+    },
+    "_note": "merge/试穿操作需要用户上传图片，应触发 HITL 中断等待用户输入"
+  },
+  {
+    "id": "hitl_002",
+    "input": "把这件衣服改成蓝色",
+    "tags": ["hitl", "visualizer", "edit", "image_required"],
+    "expected": {
+      "agent": "visualizer",
+      "action": "edit"
+    },
+    "_note": "edit 操作需要用户上传图片，应触发 HITL 中断"
+  },
+  {
+    "id": "hitl_003",
+    "input": "帮我用衣橱里的白色衬衫搭配一套面试穿搭，再试穿效果",
+    "tags": ["hitl", "multi_step", "wardrobe", "stylist", "real_agent_differs"],
+    "expected": {
+      "agent": "visualizer",
+      "action": "merge"
+    },
+    "_note": "stub 优先匹配'试穿'→visualizer/merge。真实 agent 会做多步：wardrobe→stylist→visualizer(HITL)"
+  },
+  {
+    "id": "hitl_004",
+    "input": "换一套穿搭",
+    "tags": ["hitl", "stylist", "preference_change"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    },
+    "_note": "用户对当前推荐不满意，要求替换 — 测试偏好记忆和替换推荐流程"
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "id": "mem_001",
+    "input": "我不喜欢蓝色，帮我换一套暖色调的",
+    "tags": ["memory", "preference"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  },
+  {
+    "id": "mem_002",
+    "input": "我是女生，给我推荐约会穿搭",
+    "tags": ["memory", "gender"],
+    "expected": {
+      "agent": "stylist",
+      "action": "recommend"
+    }
+  }
+]
