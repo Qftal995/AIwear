@@ -4,6 +4,7 @@ import uuid
 import time
 import base64
 import socket
+import html
 
 # Force IPv4 — dashscope DNS resolves to IPv6 on this network but IPv6 is unreachable
 _orig_getaddrinfo = socket.getaddrinfo
@@ -22,7 +23,7 @@ _project_root = os.path.dirname(os.path.dirname(_app_dir))
 _dotenv_path = os.path.join(_project_root, ".env")
 if not os.path.exists(_dotenv_path):
     _dotenv_path = os.path.join(_app_dir, ".env")
-load_dotenv(dotenv_path=_dotenv_path)
+load_dotenv(dotenv_path=_dotenv_path, override=True)
 
 from agent.core import init_models, AgentState
 from agent.supervisor import create_supervisor
@@ -136,6 +137,121 @@ def _download_image(url: str) -> bytes:
     resp = requests.get(url, timeout=20)
     resp.raise_for_status()
     return resp.content
+
+
+def _as_list(value):
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _collect_image_urls_from_obj(obj):
+    urls = []
+    if isinstance(obj, dict):
+        for key in ("url", "imageUrl", "image_url", "previewUrl", "preview_url", "ossUrl", "oss_url", "filePath", "file_path"):
+            val = obj.get(key)
+            if isinstance(val, str) and (val.startswith("http") or val.startswith("data:image")):
+                urls.append(val)
+        for val in obj.values():
+            urls.extend(_collect_image_urls_from_obj(val))
+    elif isinstance(obj, list):
+        for item in obj:
+            urls.extend(_collect_image_urls_from_obj(item))
+    return urls
+
+
+def _append_unique(seq, value):
+    if value and value not in seq:
+        seq.append(value)
+
+
+def _build_image_id_url_map(result):
+    id_to_url = {}
+
+    def walk(obj):
+        if isinstance(obj, dict):
+            image_id = obj.get("image_id") or obj.get("imageId") or obj.get("id")
+            metadata = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+            url = (
+                obj.get("url") or obj.get("imageUrl") or obj.get("image_url") or
+                obj.get("ossUrl") or obj.get("oss_url") or obj.get("filePath") or
+                metadata.get("oss_url") or metadata.get("ossUrl") or metadata.get("url")
+            )
+            if image_id and isinstance(url, str) and url.startswith("http"):
+                id_to_url[str(image_id)] = url
+            for val in obj.values():
+                walk(val)
+        elif isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(result.get("tool_results", []))
+    walk(result.get("sub_agent_results", []))
+    return id_to_url
+
+
+def _outfit_preview_data_url(outfit, idx=0):
+    name = html.escape(str(outfit.get("name") or f"Outfit {idx + 1}"))
+    items = outfit.get("items") or []
+    lines = []
+    for item in items[:5]:
+        if isinstance(item, dict):
+            text = item.get("description") or item.get("name") or item.get("image_id") or ""
+        else:
+            text = str(item)
+        if text:
+            lines.append(html.escape(text[:26]))
+    palette = [
+        ("#884BFF", "#12B76A", "#FDF8F2"),
+        ("#2563EB", "#F59E0B", "#F7FBFF"),
+        ("#7A4A2B", "#EC4899", "#FFF7ED"),
+        ("#027A48", "#6941C6", "#F0FDF4"),
+    ][idx % 4]
+    y = 150
+    item_nodes = []
+    for line in lines:
+        item_nodes.append(f'<text x="40" y="{y}" font-size="22" fill="#332b24">{line}</text>')
+        y += 34
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640" viewBox="0 0 480 640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="{palette[2]}"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
+  <rect width="480" height="640" rx="32" fill="url(#bg)"/>
+  <rect x="28" y="28" width="424" height="584" rx="28" fill="none" stroke="#eadfd2" stroke-width="2"/>
+  <circle cx="240" cy="116" r="40" fill="none" stroke="{palette[0]}" stroke-width="10"/>
+  <path d="M166 298c8-92 34-140 74-140s66 48 74 140l14 172H152l14-172z" fill="{palette[0]}" opacity=".14"/>
+  <path d="M166 298c8-92 34-140 74-140s66 48 74 140" fill="none" stroke="{palette[0]}" stroke-width="10" stroke-linecap="round"/>
+  <path d="M116 284c38 4 72 26 94 66M364 284c-38 4-72 26-94 66" fill="none" stroke="{palette[1]}" stroke-width="10" stroke-linecap="round"/>
+  <text x="40" y="72" font-size="18" fill="#8b7355" font-family="Arial, sans-serif">AIWear Preview</text>
+  <text x="40" y="470" font-size="30" font-weight="700" fill="#2b2118" font-family="Arial, sans-serif">{name}</text>
+  <g font-family="Arial, sans-serif">{''.join(item_nodes)}</g>
+</svg>'''
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
+
+
+def _build_preview_images(result):
+    images = []
+    id_to_url = _build_image_id_url_map(result)
+    for url in _collect_image_urls_from_obj(result.get("sub_agent_results", [])):
+        _append_unique(images, url)
+
+    for agent_result in result.get("sub_agent_results", []):
+        if agent_result.get("agent") != "stylist":
+            continue
+        outfits = agent_result.get("result", {}).get("outfits", [])
+        for idx, outfit in enumerate(outfits[:3]):
+            for item in outfit.get("items", []) or []:
+                if not isinstance(item, dict):
+                    continue
+                image_id = item.get("image_id") or item.get("imageId")
+                _append_unique(images, id_to_url.get(str(image_id)))
+            _append_unique(images, _outfit_preview_data_url(outfit, idx))
+    for url in _collect_image_urls_from_obj(result.get("tool_results", [])):
+        _append_unique(images, url)
+    return images[:12]
 
 
 @app.route("/api/validate-image", methods=["POST"])
@@ -410,7 +526,7 @@ def chat_api():
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
                 _future = _pool.submit(supervisor_graph.invoke, state, config)
                 try:
-                    chat_timeout = float(os.getenv("CHAT_TIMEOUT_SECONDS", "90"))
+                    chat_timeout = float(os.getenv("CHAT_TIMEOUT_SECONDS", "300"))
                     result = _future.result(timeout=chat_timeout)
                 except concurrent.futures.TimeoutError:
                     # Collect whatever steps completed so far
@@ -423,6 +539,7 @@ def chat_api():
                         "steps": partial_steps,
                         "toolCalls": partial_tools,
                         "timeout": True,
+                        "timeoutSeconds": chat_timeout,
                     }), 200
 
             # Check for HITL interrupt (LangGraph returns __interrupt__ in state
@@ -451,11 +568,23 @@ def chat_api():
                     "config": config,
                     "updated_at": time.time(),
                 }
+                _hitl_sub_results = interrupt_data.get("candidates", []) if isinstance(interrupt_data, dict) else result.get("sub_agent_results", [])
+                if not _hitl_sub_results:
+                    _hitl_sub_results = result.get("sub_agent_results", [])
                 return jsonify({
                     "code": 200,
                     "sessionId": session_id,
                     "type": "hitl",
                     "hitl": interrupt_data,
+                    "intent": result.get("intent", ""),
+                    "city": result.get("city", ""),
+                    "citySource": result.get("city_source", ""),
+                    "steps": result.get("intermediate_steps", []),
+                    "subResults": _hitl_sub_results,
+                    "toolCalls": result.get("tool_results", []),
+                    "citations": result.get("citations", []),
+                    "images": _build_preview_images(result),
+                    "needsHitl": True,
                     "reply": "需要您的确认才能继续",
                 }), 200
 
@@ -507,6 +636,7 @@ def chat_api():
                 "subResults": result.get("sub_agent_results", []),
                 "toolCalls": tool_calls,
                 "citations": citations,
+                "images": _build_preview_images(result),
                 "needsHitl": needs_hitl,
             }), 200
         except Exception as invoke_err:
@@ -517,11 +647,18 @@ def chat_api():
                     "config": config,
                     "updated_at": time.time(),
                 }
+                _hitl_sub_results = interrupt_data.get("candidates", []) if isinstance(interrupt_data, dict) else []
                 return jsonify({
                     "code": 200,
                     "sessionId": session_id,
                     "type": "hitl",
                     "hitl": interrupt_data,
+                    "steps": [],
+                    "subResults": _hitl_sub_results,
+                    "toolCalls": [],
+                    "citations": [],
+                    "images": _build_preview_images({"sub_agent_results": _hitl_sub_results}),
+                    "needsHitl": True,
                     "reply": "需要您的确认才能继续",
                 }), 200
             raise
@@ -565,6 +702,8 @@ def chat_resume_api():
         sessions[session_id] = {
             "state": result,
             "config": config,
+            "steps": result.get("intermediate_steps", []),
+            "tool_results": result.get("tool_results", []),
             "updated_at": time.time(),
         }
 
@@ -574,6 +713,15 @@ def chat_resume_api():
             "reply": reply,
             "type": "result",
             "userChoice": user_choice,
+            "intent": result.get("intent", ""),
+            "city": result.get("city", ""),
+            "citySource": result.get("city_source", ""),
+            "steps": result.get("intermediate_steps", []),
+            "subResults": result.get("sub_agent_results", []),
+            "toolCalls": result.get("tool_results", []),
+            "citations": result.get("citations", []),
+            "images": _build_preview_images(result),
+            "needsHitl": result.get("needs_hitl", False),
         }), 200
     except Exception as e:
         trace_error("", "chat-resume", str(e))
@@ -1038,16 +1186,24 @@ def traces_api(session_id):
         # Prefer steps from saved session state, fall back to trace-derived steps
         sess = sessions.get(session_id, {})
         steps = sess.get("steps", []) or panel.get("steps", [])
+        tool_calls = [
+            e for e in events
+            if e.get("type") in ("tool_call", "mcp_call", "rag", "rag_retrieve")
+        ]
+        model_calls = [e for e in events if e.get("type") == "llm_call"]
         return jsonify({
             "code": 200,
             "data": {
                 "sessionId": session_id,
                 "events": events,
                 "steps": steps,
+                "toolCalls": tool_calls,
+                "modelCalls": model_calls,
+                "timeline": events,
                 "summary": {
                     "totalEvents": panel.get("events", len(events)),
-                    "toolCalls": panel.get("tool_calls", 0),
-                    "modelCalls": panel.get("model_calls", 0),
+                    "toolCalls": len(tool_calls),
+                    "modelCalls": len(model_calls),
                     "errors": panel.get("errors", 0),
                     "totalTokensIn": panel.get("total_tokens_in", 0),
                     "totalTokensOut": panel.get("total_tokens_out", 0),
@@ -1070,7 +1226,7 @@ def traces_list_api():
 
 @app.route("/api/health", methods=["GET"])
 def health_api():
-    return jsonify({"status": "ok"}), 200
+    return jsonify({"status": "ok", "build": "codex-agent-fullchain-20260621"}), 200
 
 
 if __name__ == "__main__":

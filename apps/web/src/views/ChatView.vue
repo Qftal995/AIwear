@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, nextTick, watch, onMounted, computed } from 'vue'
 import { agentChat, searchRag, resumeChat, uploadMyImage } from '../services/api'
 import AgentChat from '../components/AgentChat.vue'
@@ -63,6 +63,80 @@ const scrollToBottom = () => {
     }
   })
 }
+
+const collectImageUrls = (value, acc = []) => {
+  if (!value) return acc
+  if (typeof value === 'string') {
+    if (value.startsWith('http') || value.startsWith('data:image')) acc.push(value)
+    return acc
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectImageUrls(item, acc))
+    return [...new Set(acc)]
+  }
+  if (typeof value === 'object') {
+    ;['url', 'imageUrl', 'image_url', 'previewUrl', 'preview_url', 'ossUrl', 'oss_url'].forEach((key) => {
+      collectImageUrls(value[key], acc)
+    })
+    ;['images', 'result', 'results', 'subResults', 'output'].forEach((key) => {
+      collectImageUrls(value[key], acc)
+    })
+  }
+  return [...new Set(acc)]
+}
+
+const collectOutfits = (body = {}) => {
+  const subResults = Array.isArray(body.subResults) ? body.subResults : []
+  const stylist = subResults.find((item) => item?.agent === 'stylist' && item?.result?.outfits)
+  return stylist?.result?.outfits || []
+}
+
+const collectWardrobeImageMap = (body = {}) => {
+  const map = {}
+  const walk = (value) => {
+    if (!value) return
+    if (Array.isArray(value)) {
+      value.forEach(walk)
+      return
+    }
+    if (typeof value !== 'object') return
+    const id = value.image_id || value.imageId || value.id
+    const meta = value.metadata || {}
+    const url = value.url || value.imageUrl || value.image_url || value.ossUrl || value.oss_url || meta.oss_url || meta.ossUrl
+    if (id && typeof url === 'string' && url.startsWith('http')) map[String(id)] = url
+    Object.values(value).forEach(walk)
+  }
+  walk(body.toolCalls)
+  walk(body.subResults)
+  return map
+}
+
+const applyAgentResultState = (body = {}) => {
+  currentSteps.value = body.steps || []
+  currentToolCalls.value = body.toolCalls || []
+  currentCitations.value = body.citations || []
+  currentSessionMeta.value = {
+    intent: body.intent || '',
+    city: body.city || '',
+    citySource: body.citySource || '',
+  }
+
+  if (body.citations && body.citations.length) ragResults.value = body.citations
+  if (body.toolCalls && body.toolCalls.length) toolEvents.value = body.toolCalls
+}
+
+const createAgentMessage = (body = {}) => ({
+  role: 'agent',
+  content: body.reply || body.message || '',
+  images: collectImageUrls(body.images || body.subResults || body),
+  outfits: collectOutfits(body),
+  wardrobeImageMap: collectWardrobeImageMap(body),
+  steps: currentSteps.value,
+  toolCalls: currentToolCalls.value,
+  citations: currentCitations.value,
+  meta: currentSessionMeta.value,
+  time: Date.now(),
+})
 
 const addRefImage = (file) => {
   if (refImages.value.length >= 4) return
@@ -135,38 +209,8 @@ const sendMessage = async () => {
 
     if (sid) currentSessionId.value = sid
 
-    // ── Capture flow / tools / citations ──
-    currentSteps.value = body.steps || []
-    currentToolCalls.value = body.toolCalls || []
-    currentCitations.value = body.citations || []
-    currentSessionMeta.value = {
-      intent: body.intent || '',
-      city: body.city || '',
-      citySource: body.citySource || '',
-    }
-
-    const agentMsg = {
-      role: 'agent',
-      content: body.reply || body.message || '',
-      images: (body.subResults || [])
-        .filter((r) => r.type === 'image')
-        .map((r) => r.url),
-      steps: currentSteps.value,
-      toolCalls: currentToolCalls.value,
-      citations: currentCitations.value,
-      meta: currentSessionMeta.value,
-      time: Date.now(),
-    }
-    messages.value.push(agentMsg)
-
-    // RAG citations for panel
-    if (body.citations && body.citations.length) {
-      ragResults.value = body.citations
-    }
-    // Tool events for MCP panel
-    if (body.toolCalls && body.toolCalls.length) {
-      toolEvents.value = body.toolCalls
-    }
+    applyAgentResultState(body)
+    messages.value.push(createAgentMessage(body))
 
     // HITL: show confirmation dialog when backend requests it
     if (body.needsHitl) {
@@ -190,8 +234,14 @@ const sendMessage = async () => {
   }
 }
 
-const handleHitlConfirm = () => {
+const handleHitlConfirm = (body = {}) => {
   hitlVisible.value = false
+  if (body && (body.reply || body.images || body.subResults)) {
+    applyAgentResultState(body)
+    messages.value.push(createAgentMessage(body))
+    scrollToBottom()
+    saveHistory()
+  }
 }
 
 const handleHitlModify = () => {
@@ -484,7 +534,7 @@ const clearSession = () => {
 
       <!-- MCP Panel -->
       <div v-if="showMcp" class="chat-mcp-wrap">
-        <McpPanelAtelier />
+        <McpPanelAtelier :tool-events="toolEvents" />
       </div>
 
       <!-- Chat body -->

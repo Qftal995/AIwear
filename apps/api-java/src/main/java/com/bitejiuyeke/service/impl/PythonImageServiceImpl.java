@@ -377,6 +377,16 @@ public class PythonImageServiceImpl implements PythonImageService {
             ChatResponse result = new ChatResponse();
             result.setSessionId(root.path("sessionId").asText(sessionId));
             result.setReply(root.path("reply").asText(""));
+            result.setNeedsHitl(root.path("needsHitl").asBoolean(false));
+            result.setIntent(root.path("intent").asText(""));
+            result.setCity(root.path("city").asText(""));
+            result.setCitySource(root.path("citySource").asText(""));
+
+            JsonNode hitlNode = root.path("hitl");
+            if (hitlNode.isObject()) {
+                result.setHitl(objectMapper.convertValue(hitlNode,
+                        new TypeReference<Map<String, Object>>() {}));
+            }
 
             JsonNode stepsNode = root.path("steps");
             if (stepsNode.isArray()) {
@@ -388,6 +398,24 @@ public class PythonImageServiceImpl implements PythonImageService {
             if (subNode.isArray()) {
                 result.setSubResults(objectMapper.convertValue(subNode,
                         new TypeReference<List<Map<String, Object>>>() {}));
+            }
+
+            JsonNode toolsNode = root.path("toolCalls");
+            if (toolsNode.isArray()) {
+                result.setToolCalls(objectMapper.convertValue(toolsNode,
+                        new TypeReference<List<Map<String, Object>>>() {}));
+            }
+
+            JsonNode citationsNode = root.path("citations");
+            if (citationsNode.isArray()) {
+                result.setCitations(objectMapper.convertValue(citationsNode,
+                        new TypeReference<List<Map<String, Object>>>() {}));
+            }
+
+            JsonNode imagesNode = root.path("images");
+            if (imagesNode.isArray()) {
+                result.setImages(objectMapper.convertValue(imagesNode,
+                        new TypeReference<List<String>>() {}));
             }
 
             return result;

@@ -14,6 +14,7 @@ const trackedSessions = ref(loadTracked())
 const globalStats = ref(null)
 const sessionStats = ref(null)
 const traceSessions = ref([])
+const traceEvents = ref([])
 const initialLoading = ref(true)
 const refreshing = ref(false)
 const error = ref(null)
@@ -26,7 +27,7 @@ let refreshTimer = null
 
 // ===== Derived =====
 const hasSession = computed(() => !!selectedSessionId.value)
-const hasData = computed(() => !!sessionStats.value)
+const hasData = computed(() => !!sessionStats.value || traceEvents.value.length > 0)
 const showContent = computed(() => !initialLoading.value)
 
 const tokenData = computed(() => {
@@ -65,8 +66,19 @@ const latency = computed(() => {
 
 const toolUsage = computed(() => {
   const breakdown = sessionStats.value?.tool_breakdown || {}
-  return Object.entries(breakdown)
+  const fromStats = Object.entries(breakdown)
     .map(([name, data]) => ({ name, count: typeof data === 'object' ? (data.count || 0) : (data || 0) }))
+    .sort((a, b) => b.count - a.count)
+  if (fromStats.length) return fromStats
+
+  const counts = {}
+  for (const event of traceEvents.value || []) {
+    if (!['tool_call', 'mcp_call'].includes(event.type)) continue
+    const name = event.tool || event.data?.tool || event.name || event.data?.name || 'unknown'
+    counts[name] = (counts[name] || 0) + 1
+  }
+  return Object.entries(counts)
+    .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
 })
 
@@ -119,6 +131,7 @@ function removeSession(id) {
     selectedSessionId.value = ''
     sessionStats.value = null
     traceSessions.value = []
+    traceEvents.value = []
   }
 }
 
@@ -156,6 +169,7 @@ async function fetchSessionAndTrace() {
       }
       if (tr.status === 'fulfilled') {
         const tBody = tr.value.data?.data || tr.value.data
+        traceEvents.value = tBody?.events || []
         if (tBody && tBody.steps) {
           traceSessions.value = [{
             id: selectedSessionId.value,

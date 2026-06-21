@@ -80,6 +80,8 @@ def parse_agent_result(output: str, agent_name: str) -> AgentResult:
         data = json.loads(content)
         if isinstance(data, dict) and "status" in data:
             data.setdefault("agent", agent_name)
+            if "url" in data and "result" not in data:
+                data["result"] = {"url": data.get("url")}
             data.setdefault("summary", str(data.get("result", ""))[:200])
             data.setdefault("confidence", 0.8)
             return data

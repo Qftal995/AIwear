@@ -65,6 +65,39 @@ def create_supervisor(llm, sub_agents: list, mcp_tools=None,
         except Exception:
             pass
 
+    def _contains_any(text: str, keywords: list[str]) -> bool:
+        return any(kw in text for kw in keywords)
+
+    def _normalize_intent_with_rules(state: AgentState, query: str):
+        """Deterministic intent guardrails for obvious fashion requests.
+
+        LLM intent classification can over-focus on words like "tomorrow" or
+        weather context. These guards keep explicit wardrobe/body/styling
+        requests from being downgraded to weather_only.
+        """
+        q = query or ""
+        styling_hit = _contains_any(q, [
+            "穿搭", "搭配", "来一套", "推荐一套", "怎么穿", "穿什么", "约会", "上班", "通勤",
+            "面试", "商务", "从衣橱", "衣橱", "我的衣服", "衣服里", "衣柜",
+        ])
+        body_hit = _contains_any(q, ["身材", "体型", "体态", "梨形", "苹果型", "沙漏", "H型", "倒三角"])
+        wardrobe_hit = _contains_any(q, ["衣橱", "我的衣服", "从衣橱", "衣服里", "衣柜"])
+        image_edit_hit = _contains_any(q, ["修图", "改图", "生成图", "换背景", "图片编辑", "试衣图", "效果图"])
+
+        if image_edit_hit:
+            state["intent"] = "image_edit"
+        elif styling_hit or body_hit:
+            state["intent"] = "styling_advice"
+        elif wardrobe_hit:
+            state["intent"] = "wardrobe_query"
+
+        if body_hit:
+            state["body_shape_requested"] = True
+        if wardrobe_hit:
+            state["wardrobe_requested"] = True
+        if styling_hit:
+            state["styling_requested"] = True
+
     def intent_node(state: AgentState) -> AgentState:
         sid = state.get("session_id", "")
         trace_node_start(sid, "intent", {"query": state["messages"][-1].content[:100]})
@@ -97,6 +130,7 @@ def create_supervisor(llm, sub_agents: list, mcp_tools=None,
             state["city"] = ""
         state["style"] = parsed.get("style") or ""
         state["original_query"] = msg
+        _normalize_intent_with_rules(state, msg)
         # If user mentioned a city, persist it as default
         if parsed.get("city"):
             _save_default_city(state, parsed["city"])
@@ -193,6 +227,22 @@ def create_supervisor(llm, sub_agents: list, mcp_tools=None,
             requires_hitl = False
             estimated_cost = "low"
 
+        # Guardrails after planning as well, so downstream nodes follow the
+        # user's explicit request even if the LLM intent was too narrow.
+        if state.get("styling_requested") or state.get("body_shape_requested"):
+            plan["intent"] = "styling_advice"
+            state["intent"] = "styling_advice"
+            plan["sub_agents"] = ["wardrobe", "stylist", "copywriter"]
+            required_tools = ["weather", "rag_search", "wardrobe_search", "body_shape"]
+            risk_level = "low"
+            requires_hitl = False
+            estimated_cost = "low"
+        elif state.get("wardrobe_requested"):
+            plan["intent"] = "wardrobe_query"
+            state["intent"] = "wardrobe_query"
+            plan["sub_agents"] = ["wardrobe"]
+            required_tools = ["wardrobe_search"]
+
         plan["required_tools"] = required_tools
         plan["risk_level"] = risk_level
         plan["requires_hitl"] = requires_hitl
@@ -219,6 +269,9 @@ def create_supervisor(llm, sub_agents: list, mcp_tools=None,
         query = state.get("original_query", "")
         gender = state.get("gender", "")
         occasion = state.get("occasion", "")
+        body_shape_requested = any(
+            kw in query for kw in ["身材", "体型", "体态", "梨形", "苹果型", "H型", "倒三角", "沙漏"]
+        ) or bool(state.get("body_shape_requested"))
 
         trace_node_start(sid, "tool_execution", {"intent": intent, "city": city})
 
@@ -308,6 +361,22 @@ def create_supervisor(llm, sub_agents: list, mcp_tools=None,
                     latency_ms = int((time.time() - _t0) * 1000)
                     tool_results.append({"tool": "body_shape", "result": br, "success": ok, "latencyMs": latency_ms, "source": "mcp"})
                     trace_tool_call(sid, "body_shape", {"shape": ""}, str(br)[:200], latency_ms)
+                except Exception as e:
+                    tool_results.append({"tool": "body_shape", "error": str(e), "success": False, "latencyMs": int((time.time() - _t0) * 1000), "source": "error"})
+            elif body_shape_requested:
+                _t0 = time.time()
+                try:
+                    br = mcp_registry.call_tool("aiwear-body-shape__analyze", {"description": query})
+                    ok = br.get("success", False)
+                    result_payload = br.get("result", {}) if ok else {}
+                    if result_payload.get("shape") == "unknown":
+                        advice = mcp_registry.call_tool("aiwear-body-shape__get_styling_advice", {"shape": ""})
+                        if advice.get("success"):
+                            result_payload["general_advice"] = advice.get("result", {})
+                            br["result"] = result_payload
+                    latency_ms = int((time.time() - _t0) * 1000)
+                    tool_results.append({"tool": "body_shape", "result": br, "success": ok, "latencyMs": latency_ms, "source": "mcp"})
+                    trace_tool_call(sid, "body_shape", {"description": query}, str(br)[:200], latency_ms)
                 except Exception as e:
                     tool_results.append({"tool": "body_shape", "error": str(e), "success": False, "latencyMs": int((time.time() - _t0) * 1000), "source": "error"})
 
@@ -481,6 +550,28 @@ def create_supervisor(llm, sub_agents: list, mcp_tools=None,
         if tool_results:
             parts.append("## 工具调用\n" + json.dumps([{"tool": t.get("tool"), "success": t.get("success")} for t in tool_results], ensure_ascii=False))
 
+            wardrobe_results = [t for t in tool_results if t.get("tool") == "wardrobe_search" and t.get("success")]
+            if wardrobe_results:
+                wardrobe_payload = wardrobe_results[-1].get("result", {}) or {}
+                wardrobe_items = wardrobe_payload.get("items", []) or []
+                wardrobe_summary = {
+                    "total": wardrobe_payload.get("total", len(wardrobe_items)),
+                    "items": [
+                        {
+                            "image_id": item.get("image_id", ""),
+                            "description": (item.get("metadata", {}) or {}).get("description", ""),
+                            "tags": (item.get("metadata", {}) or {}).get("tags", {}),
+                            "oss_url": (item.get("metadata", {}) or {}).get("oss_url", ""),
+                        }
+                        for item in wardrobe_items[:12]
+                    ],
+                }
+                parts.append("## Authoritative Wardrobe Search Result\n" + json.dumps(wardrobe_summary, ensure_ascii=False))
+
+            body_shape_results = [t for t in tool_results if t.get("tool") == "body_shape"]
+            if body_shape_results:
+                parts.append("## Body Shape MCP Result\n" + json.dumps(body_shape_results, ensure_ascii=False)[:1800])
+
         final_prompt = (
             "你是AIWear虚拟试衣助手。整合以下子助手的结果和工具调用结果，"
             "生成连贯、专业、有具体建议的搭配回复。\n"
@@ -489,7 +580,9 @@ def create_supervisor(llm, sub_agents: list, mcp_tools=None,
             "2. 如果包含效果图，描述图片中的搭配效果\n"
             "3. 如果引用知识库，自然提及参考来源\n"
             "4. 使用自然友好的中文，像专业搭配师一样对话\n"
-            "5. 如果用户之前有反馈（如'太素了''换一双'），考虑这些偏好调整建议"
+            "5. 如果用户之前有反馈（如'太素了''换一双'），考虑这些偏好调整建议\n"
+            "6. Authoritative Wardrobe Search Result 是衣橱真实检索结果；如果 total > 0，禁止说衣橱为空，必须从其中选择单品并说明图片会在前端预览区展示\n"
+            "7. Body Shape MCP Result 是身材分析真实结果；如果存在，必须在回复中明确身材类型、穿搭策略和避坑点"
         )
         combined = "\n".join(parts)
         result = llm.invoke([
@@ -612,14 +705,11 @@ def _check_handoff(result: dict, target: str, agent_map: dict, state: dict, cont
 def _check_hitl(state: AgentState):
     """Determine if human confirmation is needed.
 
-    Triggers (any one):
-    - Image generation requested (image_edit intent)
-    - Visualizer was invoked from styling_advice
-    - Any sub-agent confidence < 0.6
-    - Multiple styling candidates need user choice
+    Keep HITL only for high-cost or user-visible generation actions. Plain
+    styling advice, wardrobe/RAG/weather lookup, low confidence, and multiple
+    outfit candidates should continue without blocking the chat UI.
     """
     intent = state.get("intent", "")
-    results = state.get("sub_agent_results", [])
 
     if intent == "image_edit":
         state["needs_hitl"] = True
@@ -629,43 +719,8 @@ def _check_hitl(state: AgentState):
         }
         return
 
-    # Visualizer invoked from styling_advice — confirm before generating
-    if intent == "styling_advice" and any(r.get("agent") == "visualizer" and r.get("status") == "success" for r in results):
-        state["needs_hitl"] = True
-        state["hitl"] = {
-            "question": "搭配方案已生成。需要生成试穿效果图吗？",
-            "options": ["生成效果图", "换一套搭配", "就这样"],
-            "candidates": [r for r in results if r.get("agent") == "stylist"],
-        }
-        return
-
-    # Low confidence from any styling agent → ask user to confirm
-    low_confidence = [r for r in results if r.get("confidence", 1.0) < 0.6]
-    if low_confidence:
-        state["needs_hitl"] = True
-        agent_names = [r.get("agent", "") for r in low_confidence]
-        state["hitl"] = {
-            "question": f"以下助手置信度较低：{', '.join(agent_names)}。是否仍要基于当前结果继续？",
-            "options": ["继续", "修改需求", "取消"],
-            "candidates": results,
-        }
-        return
-
-    # Multiple outfit candidates — let user pick
-    stylist_results = [r for r in results if r.get("agent") == "stylist" and r.get("status") == "success"]
-    for sr in stylist_results:
-        outfits = sr.get("result", {}).get("outfits", [])
-        if len(outfits) > 2:
-            state["needs_hitl"] = True
-            state["hitl"] = {
-                "question": f"为您找到了 {len(outfits)} 套搭配方案，请选择偏好的方向：",
-                "options": [o.get("name", f"方案{i+1}") for i, o in enumerate(outfits[:4])] + ["都看看"],
-                "candidates": stylist_results,
-            }
-            return
-
     state["needs_hitl"] = False
-
+    state["hitl"] = {}
 
 def _summarize_history(llm, messages: list, max_turns: int = 4) -> str:
     """Summarize older conversation turns when context exceeds threshold.

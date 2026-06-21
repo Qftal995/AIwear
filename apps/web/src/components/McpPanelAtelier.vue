@@ -2,6 +2,10 @@
 import { ref, onMounted, computed } from 'vue'
 import { getMcpStatus, getMcpTools, testMcpCall } from '../services/api'
 
+const props = defineProps({
+  toolEvents: { type: Array, default: () => [] },
+})
+
 const servers = ref([])
 const tools = ref([])
 const loading = ref(true)
@@ -49,6 +53,7 @@ const runTest = async () => {
 }
 
 const connectedCount = computed(() => servers.value.filter((s) => s.status === 'connected').length)
+const recentToolEvents = computed(() => props.toolEvents || [])
 
 onMounted(fetchAll)
 </script>
@@ -73,6 +78,24 @@ onMounted(fetchAll)
 
     <!-- Content -->
     <template v-else>
+      <div v-if="recentToolEvents.length" class="atelier-usage">
+        <div class="atelier-usage-head">
+          <span>本轮工具调用</span>
+          <strong>{{ recentToolEvents.length }}</strong>
+        </div>
+        <div class="atelier-usage-list">
+          <div
+            v-for="(event, idx) in recentToolEvents"
+            :key="`${event.tool || event.name || idx}-${idx}`"
+            class="atelier-usage-row"
+          >
+            <span class="atelier-usage-dot" :class="{ 'atelier-usage-dot--fail': event.success === false }"></span>
+            <span class="atelier-usage-name">{{ event.tool || event.name || 'unknown' }}</span>
+            <span class="atelier-usage-latency">{{ event.latencyMs ?? event.latency_ms ?? 0 }}ms</span>
+          </div>
+        </div>
+      </div>
+
       <div class="atelier-head">
         <div class="atelier-head-left">
           <span class="atelier-dot atelier-dot--live"></span>
@@ -169,6 +192,65 @@ onMounted(fetchAll)
 /* ===== Container ===== */
 .atelier-mcp {
   width: 100%;
+}
+
+.atelier-usage {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #F0EBE3;
+  border-radius: 12px;
+}
+.atelier-usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5C4A3A;
+  margin-bottom: 8px;
+}
+.atelier-usage-head strong {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  color: #884BFF;
+}
+.atelier-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.atelier-usage-row {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 5px 8px;
+  background: #FDF8F2;
+  border-radius: 8px;
+}
+.atelier-usage-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #12B76A;
+}
+.atelier-usage-dot--fail {
+  background: #F04438;
+}
+.atelier-usage-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  color: #5C4A3A;
+}
+.atelier-usage-latency {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  color: #8B7355;
 }
 
 /* ===== Loading ===== */

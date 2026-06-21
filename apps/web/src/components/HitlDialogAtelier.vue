@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, watch } from 'vue'
 import { resumeChat } from '../services/api'
 
@@ -21,10 +21,11 @@ watch(() => props.visible, (v) => {
 const handleConfirm = async () => {
   state.value = 'confirming'
   try {
-    await resumeChat(props.sessionId, '确认生成')
+    const res = await resumeChat(props.sessionId, '确认生成')
+    const body = res?.data?.data || res?.data || {}
     state.value = 'confirmed'
-    emit('confirm')
-    setTimeout(() => emit('done'), 600)
+    emit('confirm', body)
+    setTimeout(() => emit('done', body), 600)
   } catch (e) {
     state.value = 'error'
     errorMsg.value = e?.message || '操作失败'
